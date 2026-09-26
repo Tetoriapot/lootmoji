@@ -4,6 +4,7 @@
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const MAX_STAT = 1e90;
   const MAX_RESOURCE = Number.MAX_SAFE_INTEGER;
+  const MAX_ENEMY_LEVEL = 999;
   const addResource = (a, b) => Math.min(MAX_RESOURCE, Math.floor(a + b));
   const finiteStat = n => clamp(n, 0, MAX_STAT);
   const units = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
@@ -35,7 +36,7 @@
       armor:0, shield:0, shieldMax:0, regen:0, blockChance:0, aegisCopies:0, chronoSlow:0, starfallCopies:0,
       aegisTimer:0, starfallTimer:0, character:'collector', unlockedCharacters:new Set(['collector']),
       enemyLevel:0, commandSignature:'', counterReadyAt:0,
-      debuffs:{slowUntil:0,poisonUntil:0,poisonNextTick:0,poisonDamage:0},
+      debuffs:{slowUntil:0,poisonUntil:0,poisonNextTick:0,poisonDamage:0,jamUntil:0},
       speed: 1, selectedOpen: 1, enemies: [], nextEnemyId: 1, gameTime: 0, effectTime: 0,
       spawnTimer: 0, attackTimer: 0, secondTimer: 0, holeTimer: 0, infernoTimer: 0,
       waveType: 'normal', waveElapsed: 0, waveLimit:45, waveWarning:11, waveTimeouts:0, waveBag: [], bossSpawned: false, bossKilled: false,
@@ -46,7 +47,7 @@
       manualPause: false, modalOpen: false, lastOpen: null, opening: null,
       toastQueue: [], toastUntil: 0, bannerUntil: 0, hurtUntil: 0, shakeUntil: 0, lastShake: -1,
       supplyUntil: 0, danger: 0, buildDirty: true, synergySignature: '', clickAt: -1,
-      ready:true, decisionOpen:false, targetId:null, damageHistory:[], lastDefeat:'',
+      ready:true, decisionOpen:false, helpOpen:false, targetId:null, damageHistory:[], lastDefeat:'',
       respawnRemaining:0,
       unlockedEnemyLevel:0,pendingEnemyLevel:null,earnedGold:0,earnedPacks:0,combatSeconds:0,records:{},bossesDefeated:0,
     };
@@ -184,9 +185,25 @@
   ];
   const currentCharacter=()=>characterPool.find(c=>c.id===state.character);
   const shieldCapacity=()=>finiteStat((state.shieldMax+state.maxHp*Math.min(10,state.aegisCopies*.5))*(currentCharacter().shieldScale||1));
-  const enemyModifiers=(level=state.enemyLevel)=>({hp:3**level,attack:1.12**level,gold:1.6**level,packs:1.25**level});
+  const enemyModifiers=(level=state.enemyLevel)=>{
+    const early=Math.min(30,level),late=Math.max(0,level-30);
+    return {hp:3**early*1.16**late,attack:1.12**early*1.04**late,gold:1.6**early*1.012**late,packs:1.25**early*1.008**late};
+  };
   const enemyDamage=(amount,enemy)=>finiteStat(amount*1.75*enemyModifiers().attack*(enemy?.elite?1.4:1)*(enemy?.berserk&&enemy.enraged?1.5:1));
-  const enemyUpgradeCost=()=>Math.floor(500*1.8**Math.max(state.enemyLevel,state.unlockedEnemyLevel));
+  const enemyUpgradeCost=(level=Math.max(state.enemyLevel,state.unlockedEnemyLevel))=>Math.floor(500*1.8**Math.min(30,level)*(1+Math.max(0,level-30)/20)**2);
+  function upgradeQuote(amount=1) {
+    const from=Math.max(state.enemyLevel,state.unlockedEnemyLevel),limit=amount==='max'?MAX_ENEMY_LEVEL:Math.min(MAX_ENEMY_LEVEL,from+amount);
+    let to=from,cost=0;
+    while(to<limit&&cost+enemyUpgradeCost(to)<=state.gold){cost+=enemyUpgradeCost(to);to++;}
+    return {from,to,count:to-from,cost};
+  }
+  function rescaleEnemies(level) {
+    for(const enemy of state.enemies) {
+      const hpRatio=enemy.hp/enemy.maxHp,shieldRatio=enemy.shieldMax?enemy.shield/enemy.shieldMax:0,shieldScale=enemy.shieldMax/enemy.maxHp;
+      enemy.maxHp=finiteStat(enemy.baseHp*enemyModifiers(level).hp);enemy.hp=enemy.maxHp*hpRatio;
+      enemy.shieldMax=finiteStat(enemy.maxHp*shieldScale);enemy.shield=enemy.shieldMax*shieldRatio;positionEnemy(enemy);
+    }
+  }
   function selectCharacter(id) {
     if(state.modalOpen)return false;
     const character=characterPool.find(c=>c.id===id);if(!character)return false;
@@ -197,15 +214,11 @@
     } else el.commandNotice.textContent=`${character.emoji} ${character.name} に交代しました。`;
     state.character=id;state.shield=Math.min(state.shield,shieldCapacity());sound.play('synergy',.8);emitBurst(86,48,'#d6ff73',28,1);saveProgress();renderUI();return true;
   }
-  function upgradeEnemies() {
-    const cost=enemyUpgradeCost();
-    if(state.modalOpen||Math.max(state.enemyLevel,state.unlockedEnemyLevel)>=30||state.gold<cost)return false;
-    const old=state.enemyLevel;state.gold-=cost;state.enemyLevel=Math.max(old,state.unlockedEnemyLevel)+1;state.unlockedEnemyLevel=state.enemyLevel;state.pendingEnemyLevel=null;
-    for(const enemy of state.enemies) {
-      const ratio=enemy.hp/enemy.maxHp;enemy.maxHp=finiteStat(enemy.maxHp*3**(state.enemyLevel-old));enemy.hp=enemy.maxHp*ratio;positionEnemy(enemy);
-      if(enemy.shieldMax){const shieldRatio=enemy.shield/enemy.shieldMax;enemy.shieldMax=finiteStat(enemy.maxHp*.6);enemy.shield=enemy.shieldMax*shieldRatio;positionEnemy(enemy);}
-    }
-    el.commandNotice.textContent=`ENEMY OVERDRIVE Lv.${state.enemyLevel} — HP ×3 / ATK ×1.12 / GOLD ×1.6 / PACK ×1.25。`;
+  function upgradeEnemies(amount=1) {
+    const quote=upgradeQuote(amount);
+    if(state.modalOpen||!quote.count)return false;
+    state.gold-=quote.cost;state.enemyLevel=quote.to;state.unlockedEnemyLevel=quote.to;state.pendingEnemyLevel=null;rescaleEnemies(quote.to);
+    el.commandNotice.textContent=`OVERDRIVE +${quote.count} → Lv.${state.enemyLevel} / ${exact(quote.cost)} GOLD`;
     resetEconomy();showBanner('ENEMY OVERDRIVE',`Lv.${state.enemyLevel} / 敵と報酬が強化されました`);sound.play('boss',.7);battleFlash('#ff8899',.12);saveProgress();renderUI();return true;
   }
 
@@ -262,9 +275,10 @@
   const isLastStand = () => active('lastStand') && state.hp <= state.maxHp * .3;
   const isTaxActive = () => active('kingsTax') && state.gold > 0 && state.taxPaidUntil > state.gameTime;
   const isJackpot = () => state.jackpotUntil > state.gameTime;
-  const isPaused = () => state.respawnRemaining>0 || !state.ready || state.decisionOpen || state.manualPause || (state.modalOpen && settings.pauseDuringPacks);
+  const isPaused = () => state.respawnRemaining>0 || !state.ready || state.helpOpen || state.decisionOpen || state.manualPause || (state.modalOpen && settings.pauseDuringPacks);
   const isSlowed = () => state.debuffs.slowUntil>state.gameTime;
   const isPoisoned = () => state.debuffs.poisonUntil>state.gameTime;
+  const isJammed = () => state.debuffs.jamUntil>state.gameTime;
   function snapshotStats() {
     let damage = state.damage;
     if (active('packAddict')) damage *= 1 + Math.floor(state.totalOpened/100)*.01;
@@ -314,6 +328,12 @@
     {id:'siphon',name:'SHIELD LEECH',emoji:'🪫',hp:85,speed:5.8,gold:25,size:43,ranged:true,shot:'⚡',cooldown:3.6,stopX:41,attack:12,shieldDrain:.25,desc:'命中時、先にプレイヤーの防壁最大値の25%を削り、その後に通常ダメージ。防壁がない場合は通常ダメージだけ。完全ガードで両方を防げる。'},
     {id:'boar',name:'RAGE BOAR',emoji:'🐗',hp:125,speed:5,gold:28,size:49,armor:.55,berserk:true,desc:'装甲で被ダメージ55%軽減。HP45%以下で装甲を捨て、移動2.5倍・接触威力1.5倍に激昂。激昂後は集中攻撃で倒す。'},
     {id:'thrall',name:'BONE THRALL',emoji:'🦴',hp:16,speed:12,gold:0,size:30,summoned:true,desc:'GRAVE CALLERの召喚雑兵。報酬とWAVE目標加算なし。術者を倒すと一緒に消滅。'},
+    {id:'warden',name:'AEGIS WARDEN',emoji:'🗿',hp:150,speed:4,gold:36,size:48,ranged:true,support:'shield',cooldown:6,stopX:32,desc:'6秒ごとに近くの仲間3体へ最大HPの20%分の防壁を補充（上限35%、ボスは上限を変更せず5%補充）。1秒の予告中に倒して阻止。'},
+    {id:'splitter',name:'SPLIT JELLY',emoji:'🪼',hp:100,speed:7,gold:31,size:48,splitter:true,desc:'倒すと高速の小クラゲ2体に分裂。小クラゲは報酬・WAVE目標加算なし、再分裂もしない。範囲攻撃でまとめて処理。'},
+    {id:'shard',name:'JELLY SHARD',emoji:'🫧',hp:22,speed:22,gold:0,size:29,summoned:true,desc:'分裂した小クラゲ。高速で接近する。報酬・WAVE目標加算なし、再分裂なし。'},
+    {id:'jammer',name:'STATIC JAMMER',emoji:'📡',hp:85,speed:5,gold:35,size:44,ranged:true,shot:'〰',cooldown:4,stopX:35,attack:11,debuff:'jam',desc:'電波弾が命中すると3秒間、防壁の自然回復とAEGISの補充準備を停止。HP回復・攻撃・開封による防壁補充は有効。完全ガードで防止。'},
+    {id:'sniper',name:'RAIL SNIPER',emoji:'🎯',hp:65,speed:4.8,gold:38,size:43,ranged:true,shot:'➠',cooldown:6,stopX:19,attack:38,pierce:.4,sniper:true,desc:'1.5秒の照準予告後に高威力の単発弾。防壁を40%貫通。攻撃間隔6秒、HPは低い。予告中の集中攻撃で倒そう。'},
+    {id:'haste',name:'WAR DRUMMER',emoji:'🥁',hp:115,speed:4.5,gold:34,size:45,ranged:true,support:'haste',cooldown:5,stopX:30,desc:'5秒ごとに周囲の仲間へ3秒間の移動・攻撃準備速度1.6倍を付与。重複せず時間更新。1秒の予告中に倒して阻止。'},
   ];
   const bossCatalog=['👹','🐲','🐙','👁️','🤖','🌞','🕳️'];
   const fxLimits={projectile:40,damage:60,particle:80};
@@ -446,11 +466,15 @@
     if(state.world>=2||state.stage>=2||state.wave>=4)rangedPool.push('siphon');
     if(state.world>=2||state.stage>=2)rangedPool.push('boar');
     if(state.world>=2&&state.enemies.filter(e=>e.support==='summon').length<2)rangedPool.push('summoner');
+    if(state.stage>=3||state.world>=2)rangedPool.push('splitter','sniper');
+    if(state.world>=2)rangedPool.push('jammer');
+    if(state.world>=2&&state.enemies.filter(e=>e.support==='shield').length<2)rangedPool.push('warden');
+    if(state.world>=3&&state.enemies.filter(e=>e.support==='haste').length<2)rangedPool.push('haste');
     const rangedType=!small&&Math.random()<.3?rangedPool[Math.floor(Math.random()*rangedPool.length)]:null;
     const bomberType=(state.world>=2||state.stage>=2||state.wave>=2)&&Math.random()<(small?.18:.08)?'bomber':null;
     const base=boss?{emoji:bossCatalog[(state.world-1)%bossCatalog.length],hp:1600,speed:4.2,gold:220,size:98}:(enemyCatalog.find(e=>e.id===(options.type||bomberType||rangedType))||enemyCatalog[index]);
-    const hp=finiteStat(base.hp*worldScale()*enemyModifiers().hp*(boss?1.5:elite?5:state.waveType==='swarm'?.36:1));
-    const enemy={id:state.nextEnemyId++,boss,elite,alive:true,emoji:base.emoji,hp,maxHp:hp,
+    const baseHp=finiteStat(base.hp*worldScale()*(boss?1.5:elite?5:state.waveType==='swarm'?.36:1)),hp=finiteStat(baseHp*enemyModifiers().hp);
+    const enemy={id:state.nextEnemyId++,boss,elite,alive:true,emoji:base.emoji,hp,maxHp:hp,baseHp,
       speed:base.speed*1.22*(1+Math.min(2,state.world*.025))*(options.formation==='rush'?1.7:1),
       gold:finiteStat(base.gold*worldScale()*1.35*(elite?4:1)),size:base.size*(elite?1.25:small?.85:1),
       x:options.x??(4+Math.random()*9),y:options.y??(23+Math.random()*55),hitUntil:0,waveSerial:state.waveSerial,
@@ -458,14 +482,15 @@
       type:base.id||'melee',pierce:base.pierce||0,debuff:base.debuff||null,
       direct:!!base.direct,bomber:!!base.bomber,fuseTimer:0,shieldMax:boss?finiteStat(hp*.6):0,shield:boss?finiteStat(hp*.6):0,
       cooldown:base.cooldown||3,stopX:base.stopX||90,attackPower:base.attack||0,bossTimer:0,enraged:false,
-      support:base.support||null,armor:base.armor||0,berserk:!!base.berserk,shieldDrain:base.shieldDrain||0,summoned:!!base.summoned,summonerId:options.summonerId??null,desc:base.desc||''};
+      support:base.support||null,armor:base.armor||0,berserk:!!base.berserk,shieldDrain:base.shieldDrain||0,summoned:!!base.summoned,summonerId:options.summonerId??null,desc:base.desc||'',splitter:!!base.splitter,sniper:!!base.sniper,hasteUntil:0};
     enemy.el=document.createElement('button');enemy.el.type='button';enemy.el.className='enemy'+(boss?' boss':'')+(elite?' elite':'')+(enemy.ranged?' ranged':'')+(enemy.pierce?' piercing':'')+(enemy.debuff==='slow'?' hexer':enemy.debuff==='poison'?' toxic':'');
     if(enemy.direct)enemy.el.classList.add('direct');if(enemy.bomber)enemy.el.classList.add('bomber');
     if(enemy.support)enemy.el.classList.add('support-'+enemy.support);if(enemy.berserk)enemy.el.classList.add('rage-boar');if(enemy.shieldDrain)enemy.el.classList.add('shield-leech');if(enemy.summoned)enemy.el.classList.add('summoned');
+    if(enemy.splitter)enemy.el.classList.add('splitter');if(enemy.sniper)enemy.el.classList.add('sniper');if(enemy.debuff==='jam')enemy.el.classList.add('jammer');
     enemy.el.dataset.help='enemy:'+enemy.id;
     enemy.el.setAttribute('aria-label',(boss?'ボス ':elite?'エリート ':'敵 ')+enemy.emoji+' '+enemy.name+'を攻撃');
     enemy.el.style.fontSize=`clamp(${Math.round(enemy.size*.65)}px, ${enemy.size/10}vw, ${enemy.size}px)`;
-    enemy.el.innerHTML=`<span>${enemy.emoji}</span><div class="enemy-hp"><i></i></div>${boss?'<div class="enemy-shield"><i></i></div>':''}`;enemy.hpEl=enemy.el.querySelector('.enemy-hp i');enemy.shieldEl=enemy.el.querySelector('.enemy-shield i');
+    enemy.el.innerHTML=`<span>${enemy.emoji}</span><div class="enemy-hp"><i></i></div><div class="enemy-shield"><i></i></div>`;enemy.hpEl=enemy.el.querySelector('.enemy-hp i');enemy.shieldEl=enemy.el.querySelector('.enemy-shield i');
     enemy.el.addEventListener('click',()=>{
       const now=performance.now();if(isPaused()||now-state.clickAt<80)return;state.clickAt=now;
       state.targetId=enemy.id;attackEnemy(enemy,.65);renderUI();
@@ -474,7 +499,7 @@
   }
   function positionEnemy(enemy) {
     enemy.el.style.left=enemy.x+'%';enemy.el.style.top=enemy.y+'%';enemy.hpEl.style.width=clamp(enemy.hp/enemy.maxHp*100,0,100)+'%';
-    if(enemy.shieldEl){enemy.shieldEl.style.width=clamp(enemy.shield/enemy.shieldMax*100,0,100)+'%';enemy.el.classList.toggle('shielded',enemy.shield>0);}
+    if(enemy.shieldEl){enemy.shieldEl.style.width=(enemy.shieldMax?clamp(enemy.shield/enemy.shieldMax*100,0,100):0)+'%';enemy.shieldEl.parentElement.classList.toggle('hidden',enemy.shieldMax<=0);enemy.el.classList.toggle('shielded',enemy.shield>0);}
   }
   function spawnGroup({count=4,formation='cluster',x=4,small=false}={}) {
     const center=32+Math.random()*36;
@@ -485,8 +510,7 @@
   }
   function startWave(initial=false,forcedType=null) {
     if(state.pendingEnemyLevel!==null) {
-      const ratio=3**(state.pendingEnemyLevel-state.enemyLevel);state.enemyLevel=state.pendingEnemyLevel;state.pendingEnemyLevel=null;
-      for(const enemy of state.enemies){enemy.hp=finiteStat(enemy.hp*ratio);enemy.maxHp=finiteStat(enemy.maxHp*ratio);enemy.shield=finiteStat(enemy.shield*ratio);enemy.shieldMax=finiteStat(enemy.shieldMax*ratio);positionEnemy(enemy);}resetEconomy();
+      state.enemyLevel=state.pendingEnemyLevel;state.pendingEnemyLevel=null;rescaleEnemies(state.enemyLevel);resetEconomy();
     }
     state.waveSerial++;state.waveKills=0;state.waveElapsed=0;state.spawnTimer=0;state.bossSpawned=false;state.bossKilled=false;
     if(state.wave===5)state.waveType='boss';
@@ -530,12 +554,13 @@
     return true;
   }
   function clearDebuffs() {
-    Object.assign(state.debuffs,{slowUntil:0,poisonUntil:0,poisonNextTick:0,poisonDamage:0});
+    Object.assign(state.debuffs,{slowUntil:0,poisonUntil:0,poisonNextTick:0,poisonDamage:0,jamUntil:0});
     el.playerCard.classList.remove('slowed','poisoned');el.debuffList.classList.add('hidden');
   }
   function applyDebuff(kind,amount) {
     const d=state.debuffs;
-    if(kind==='slow') {
+    if(kind==='jam'){d.jamUntil=state.gameTime+3;popDamage(84,33,'📡 防壁回復停止');}
+    else if(kind==='slow') {
       const fresh=!isSlowed();d.slowUntil=state.gameTime+5;
       if(fresh){addFx('damage','status-pop status-slow','⛓ SLOW',84,23,.85);emitBurst(86,48,'#c399ff',18);}
     } else if(kind==='poison') {
@@ -594,7 +619,8 @@
     const serial=state.waveSerial;
     for(const enemy of [...state.enemies]) {
       if(!enemy.alive)continue;
-      const enemyDt=dt*(1-state.chronoSlow);
+      const hasted=enemy.hasteUntil>state.gameTime;enemy.el.classList.toggle('hasted',hasted);
+      const enemyDt=dt*(1-state.chronoSlow)*(hasted?1.6:1);
       if(enemy.berserk&&!enemy.enraged&&enemy.hp/enemy.maxHp<=.45) {
         enemy.enraged=true;enemy.armor=0;enemy.el.classList.add('enraged');sound.play('enemy',1.2);
         emitBurst(enemy.x,enemy.y,'#ffb16c',22);popDamage(enemy.x,enemy.y-10,'🐗 激昂！');
@@ -614,7 +640,7 @@
         positionEnemy(enemy);if(state.effectTime>=enemy.hitUntil)enemy.el.classList.remove('hit');continue;
       }
       if(enemy.ranged&&enemy.x>=enemy.stopX&&enemy.x<90) {
-        enemy.shotTimer+=enemyDt;enemy.el.classList.toggle('aiming',enemy.shotTimer>=enemy.cooldown-(enemy.direct||enemy.support?1:.65));
+        enemy.shotTimer+=enemyDt;enemy.el.classList.toggle('aiming',enemy.shotTimer>=enemy.cooldown-(enemy.sniper?1.5:enemy.direct||enemy.support?1:.65));
         if(enemy.shotTimer>=enemy.cooldown){enemy.shotTimer%=enemy.cooldown;if(enemy.support)castEnemySupport(enemy);else if(enemy.direct)directStrike(enemy);else fireEnemyProjectile(enemy);if(state.waveSerial!==serial)break;}
       } else if(!enemy.boss||enemy.x<(enemy.enraged?68:58))enemy.x+=enemy.speed*enemyDt*(enemy.enraged?(enemy.berserk?2.5:1.5):1);
       if(enemy.x>=91) {
@@ -640,6 +666,14 @@
       const wounded=state.enemies.filter(e=>e!==enemy&&e.alive&&e.hp<e.maxHp&&Math.hypot(e.x-enemy.x,(e.y-enemy.y)*.6)<35).sort((a,b)=>a.hp/a.maxHp-b.hp/b.maxHp).slice(0,3);
       for(const target of wounded){const amount=Math.min(target.maxHp-target.hp,target.maxHp*(target.boss?.04:.12));target.hp+=amount;positionEnemy(target);popDamage(target.x,target.y-8,'🌿 +'+fmt(amount));drawLightning(enemy,target);}
       if(wounded.length){sound.play('shield',.65);emitBurst(enemy.x,enemy.y,'#a6f5b5',20);}
+    } else if(enemy.support==='shield') {
+      const allies=state.enemies.filter(e=>e!==enemy&&e.alive&&Math.hypot(e.x-enemy.x,(e.y-enemy.y)*.6)<35&&e.shield<(e.boss?e.shieldMax:Math.max(e.shieldMax,e.maxHp*.35))).sort((a,b)=>a.shield/a.maxHp-b.shield/b.maxHp).slice(0,3);
+      for(const target of allies){if(!target.boss)target.shieldMax=Math.max(target.shieldMax,target.maxHp*.35);target.shield=Math.min(target.shieldMax,target.shield+target.maxHp*(target.boss?.05:.2));positionEnemy(target);drawLightning(enemy,target);popDamage(target.x,target.y-8,'🛡 防壁！');}
+      if(allies.length){sound.play('shield');emitBurst(enemy.x,enemy.y,'#9beaff',24);}
+    } else if(enemy.support==='haste') {
+      const allies=state.enemies.filter(e=>e!==enemy&&e.alive&&Math.hypot(e.x-enemy.x,(e.y-enemy.y)*.6)<38).slice(0,6);
+      for(const target of allies){target.hasteUntil=state.gameTime+3;drawLightning(enemy,target);}
+      if(allies.length){sound.play('wave',.6);popDamage(enemy.x,enemy.y-10,'🥁 加速！');}
     } else if(enemy.support==='summon') {
       const owned=state.enemies.filter(e=>e.summonerId===enemy.id).length;
       const count=Math.min(2,4-owned,maxEnemies()-state.enemies.length);
@@ -664,7 +698,7 @@
   function fireEnemyProjectile(enemy) {
     if(!enemy.alive)return;
     const amount=enemyDamage(enemy.attackPower*(1+state.world*.12),enemy);
-    const shots=enemy.elite||enemy.name==='HEX CASTER'||state.world>=3?2:1;
+    const shots=enemy.sniper?1:enemy.elite||enemy.name==='HEX CASTER'||state.world>=3?2:1;
     const special=enemy.pierce?' pierce-shot':enemy.debuff==='slow'?' hex-shot':enemy.debuff==='poison'?' poison-shot':'';
     for(let i=0;i<shots;i++)addFx('projectile','enemy-shot'+special,enemy.shot,enemy.x,enemy.y+(i?5:0),reducedMotion.matches?.12:.62+i*.12,
       {target:{x:86,y:48},startX:enemy.x,startY:enemy.y+(i?5:0),onFinish:()=>hurtPlayer(amount*(i?.65:1),enemy)});
@@ -759,6 +793,7 @@
     // Remove first, then process death effects iteratively. A corpse can only proc once.
     removeEnemy(enemy);state.kills=addResource(state.kills,1);if(!enemy.summoned)state.waveKills++;
     if(enemy.support==='summon')for(const minion of [...state.enemies])if(minion.summonerId===enemy.id)removeEnemy(minion);
+    if(enemy.splitter){for(let i=0;i<2;i++)spawnEnemy({type:'shard',x:Math.min(72,enemy.x+2),y:clamp(enemy.y+(i?8:-8),20,80)});popDamage(enemy.x,enemy.y-10,'🪼 分裂！');}
     sound.play(enemy.boss?'boss':'kill');emitBurst(enemy.x,enemy.y,enemy.boss?'#ff9fce':'#ffda89',enemy.boss?90:14,enemy.boss?2.4:1);
     if(enemy.boss){shockwave(enemy.x,enemy.y,'#ffabd1',280);battleFlash('#ffadce',.22);impactSlow(.1);}
     const beforeGold=state.gold;if(!enemy.summoned)state.gold=addResource(state.gold,Math.max(1,enemy.gold*state.goldMult*enemyModifiers().gold));
@@ -801,9 +836,9 @@
     if(state.secondTimer>=1) {
       state.secondTimer%=1;payKingsTax();checkSynergies();
       state.hp=Math.min(state.maxHp,state.hp+snapshotStats().regen);
-      state.shield=Math.min(shieldCapacity(),state.shield+shieldCapacity()*.04);
+      if(!isJammed())state.shield=Math.min(shieldCapacity(),state.shield+shieldCapacity()*.04);
     }
-    if(state.aegisCopies>0) {
+    if(state.aegisCopies>0&&!isJammed()) {
       state.aegisTimer+=dt;
       if(state.aegisTimer>=6){state.aegisTimer%=6;state.shield=shieldCapacity();addFx('particle','shield-flare','🏰',86,50,.5);}
     }
@@ -1064,19 +1099,20 @@
       setText(button,selected?'使用中':unlocked?'交代する':`🪙 ${fmt(c.cost)} 解放`);
       button.disabled=selected||(!unlocked&&state.gold<c.cost);button.setAttribute('aria-pressed',String(selected));
     }
-    const unlocked=Math.max(state.enemyLevel,state.unlockedEnemyLevel),modifiers=enemyModifiers(),next=enemyModifiers(Math.min(30,unlocked+1)),signature=state.enemyLevel+':'+unlocked;
+    const unlocked=Math.max(state.enemyLevel,state.unlockedEnemyLevel),modifiers=enemyModifiers(),next=enemyModifiers(Math.min(MAX_ENEMY_LEVEL,unlocked+1)),signature=state.enemyLevel+':'+unlocked;
     if(state.commandSignature!==signature) {
       state.commandSignature=signature;
       el.threatPreview.innerHTML=[['hp','♥ HP'],['attack','⚔ ATK'],['gold','🪙 GOLD'],['packs','📦 PACK']].map(([key,label])=>`<div data-help="enemyUpgrade" tabindex="0"><span>${label}</span><b>×${fmtDecimal(modifiers[key])} <em>→ ×${fmtDecimal(next[key])}</em></b></div>`).join('');
-      setText(el.threatLevel,`挑戦 Lv.${state.enemyLevel} / 解放 ${unlocked}`);
+      setText(el.threatLevel,`Lv.${state.enemyLevel} / 上限 ${MAX_ENEMY_LEVEL} · 解放 ${unlocked}`);
     }
-    setText(el.upgradeEnemyBtn,unlocked>=30?'強化上限 Lv.30':`🪙 ${fmt(enemyUpgradeCost())} — Lv.${unlocked+1} 解放`);
-    el.upgradeEnemyBtn.disabled=unlocked>=30||state.gold<enemyUpgradeCost();
+    setText(el.upgradeEnemyBtn,unlocked>=MAX_ENEMY_LEVEL?'Lv.999 到達！':`🪙 ${fmt(enemyUpgradeCost())} — Lv.${unlocked+1} 解放`);
+    el.upgradeEnemyBtn.disabled=unlocked>=MAX_ENEMY_LEVEL||state.gold<enemyUpgradeCost();
+    for(const [id,amount] of [['upgradeTenBtn',10],['upgradeMaxBtn','max']]){const q=upgradeQuote(amount);$(id).disabled=!q.count;setText($(id),q.count?'+ '+q.count+' Lv · '+fmt(q.cost)+' GOLD':amount==='max'?'MAX強化':'＋10 Lv');}
     if($('enemyLevelChoice').options.length!==unlocked+1)$('enemyLevelChoice').innerHTML=Array.from({length:unlocked+1},(_,i)=>`<option value="${i}">Lv.${i}</option>`).join('');
     $('enemyLevelChoice').value=state.pendingEnemyLevel??state.enemyLevel;
     const stats=snapshotStats(),dps=Math.max(.001,stats.damage*stats.aps*(1+state.crit*(state.critMult-1))*(state.character==='nova'?2.2:1));
-    const hp=34*worldScale()*modifiers.hp,seconds=hp/dps;
-    setText($('economyReport'),`射手1体の目安：HP ${fmt(hp)} / 通常攻撃のみ約 ${fmtDecimal(seconds)}秒。次の解放Lvでは約 ${fmtDecimal(seconds*next.hp/modifiers.hp)}秒。1段階ごとのGOLD/HP効率 ×0.53、PACK/HP効率 ×0.42。収益/秒が増えるとは限りません。実測 ${state.combatSeconds.toFixed(1)}秒：${fmtDecimal(state.earnedGold/Math.max(1,state.combatSeconds))} GOLD/s、${fmtDecimal(state.earnedPacks/Math.max(1,state.combatSeconds))} PACK/s（撃破報酬・ゲーム内時間、消費は控除前）。${state.pendingEnemyLevel!==null?'次WAVEからLv.'+state.pendingEnemyLevel:'Lv変更時に実測をリセット'}`);
+    const hp=finiteStat(34*worldScale()*modifiers.hp),seconds=hp/dps;
+    setText($('economyReport'),`射手1体の目安：HP ${fmt(hp)} / 通常攻撃のみ約 ${fmtDecimal(seconds)}秒。次の解放Lvでは約 ${fmtDecimal(seconds*next.hp/modifiers.hp)}秒。Lv.30まではHP×3、以降はHP×1.16／ATK×1.04／GOLD×1.012／PACK×1.008。収益/秒が増えるとは限りません。実測 ${state.combatSeconds.toFixed(1)}秒：${fmtDecimal(state.earnedGold/Math.max(1,state.combatSeconds))} GOLD/s、${fmtDecimal(state.earnedPacks/Math.max(1,state.combatSeconds))} PACK/s（撃破報酬・ゲーム内時間、消費は控除前）。${state.pendingEnemyLevel!==null?'次WAVEからLv.'+state.pendingEnemyLevel:'Lv変更時に実測をリセット'}`);
     if($('characterCompare').closest('details').open)renderCharacterComparison();
   }
   function renderBuilds() {
@@ -1155,7 +1191,7 @@
     build:'CARD BUILD\n所持カードと累計枚数。すべての解放済みキャラクターに共通で適用されます。各カードに重ねると効果と正確な枚数を表示します。',
     characters:'PLAYABLE CHARACTERS\nGOLDで3種類の追加キャラクターを解放。解放と同時に交代し、以降の交代は無料。カードビルド・HP・シールドは共通。解放状態はこの周回中のみ保持されます。',
     command:'COMBAT HQ\nGOLDを使ってキャラクターを解放したり、敵とその報酬を強化したりできます。パック購入とは別のコインの使い道です。',
-    enemyUpgrade:()=>`ENEMY OVERDRIVE / Lv.${state.enemyLevel}\n1段階で敵HP ×3、敵ATK ×1.12、GOLD報酬 ×1.6、PACK獲得数 ×1.25。購入は解放済みの最高Lv＋1を解放・適用。既存の敵にも残HP比率を保って即反映。\n${state.unlockedEnemyLevel>=30?'解放上限です。':`次の費用 ${exact(enemyUpgradeCost())} GOLD。`}解放済みLvへの変更は無料・次WAVEから。1体の報酬増は毎秒収益増を保証しません。`,
+    enemyUpgrade:()=>`ENEMY OVERDRIVE / Lv.${state.enemyLevel}\n上限Lv.999。Lv.30まではHP ×3、ATK ×1.12、GOLD ×1.6、PACK ×1.25。Lv.31以降はHP ×1.16、ATK ×1.04、GOLD ×1.012、PACK ×1.008。購入は解放済みの最高Lv＋1を解放・適用。既存の敵にも残HP比率を保って即反映。\n${state.unlockedEnemyLevel>=MAX_ENEMY_LEVEL?'解放上限です。':`次の費用 ${exact(enemyUpgradeCost())} GOLD。`}解放済みLvへの変更は無料・次WAVEから。1体の報酬増は毎秒収益増を保証しません。`,
     chain:'KILL CHAIN\n0.7秒以内に連続撃破するとチェイン継続。10・25・50・100体で演出が強化。報酬倍率には影響しません。',
     danger:'DANGER\n画面右30%へ敵が入ると赤く脈動、右20%で警告、右10%で画面揺れ。遠距離敵は前線へ来る前に射撃します。',
     enemyCount:'HOSTILES\n現在の敵数 / 同時出現上限。WORLD 1は12体、WORLD 10以降は最大36体。射手は遠距離で停止します。',
@@ -1180,51 +1216,29 @@
         enemy.direct?'⌖ 1秒のLOCK ON予告後、4.8秒ごとに直接攻撃。シールド100%貫通。予告中に倒せば中断。ARMORとPARRYは有効。':
         enemy.bomber?'⚡ 超高速で接近。左74%で0.55秒の導火線後に自爆。起爆前に倒せば不発、起爆した敵は報酬・撃破数なし。':
         enemy.ranged?`遠距離型。画面の左${enemy.stopX}%付近で停止、${enemy.cooldown}秒ごとに射撃。魔法使い・エリート・WORLD 3以降は2連射。`:'接触型。右端に到達するとプレイヤーにダメージ。');
-      const trait=enemy.pierce&&!enemy.direct?'\n⟐ シールド60%貫通。ARMORの軽減・PARRYの完全ガードは有効。':enemy.debuff==='slow'?'\n⛓ 5秒間、APS −30%。シールド吸収でも付与、完全ガードで防止。':enemy.debuff==='poison'?'\n☣ 6秒間の毒＋毎秒HP回復 −50%。毒は毎秒基礎威力の30%、重複なし。シールド吸収でも付与、完全ガードで防止。':'';
+      const trait=enemy.pierce&&!enemy.direct?`\n⟐ シールド${Math.round(enemy.pierce*100)}%貫通。ARMORの軽減・PARRYの完全ガードは有効。`:enemy.debuff==='slow'?'\n⛓ 5秒間、APS −30%。シールド吸収でも付与、完全ガードで防止。':enemy.debuff==='poison'?'\n☣ 6秒間の毒＋毎秒HP回復 −50%。毒は毎秒基礎威力の30%、重複なし。シールド吸収でも付与、完全ガードで防止。':'';
       return `${enemy.emoji} ${enemy.name}${enemy.elite?' / ELITE':''}${enemy.enraged?' / ENRAGED':''}\nHP ${fmt(enemy.hp)} / ${fmt(enemy.maxHp)}\n${behavior}${trait}\nクリックで追撃できます。`;
     }
     if(kind==='rarity')return `${id} / ${exact(Number(count))}枚\n基本出現率 ${(rarityRates.find(r=>r[0]===id)[1]*100).toFixed(id==='SECRET'?3:1)}%。同じレアリティ内のカードは均等に抽選します。`;
     if(kind==='amount')return `開封数 ${id==='max'?'MAX（所持する全パック）':exact(Number(id))+'パック'}\n選択後、OPENで開封。所持数を超える場合は所持分だけ開封します。`;
     const definition=helpDefinitions[kind];return typeof definition==='function'?definition():definition||'';
   }
-  function hideHelp() {
-    if(helpOwner)helpOwner.removeAttribute('aria-describedby');helpOwner=null;el.helpTooltip.classList.add('hidden');
-  }
-  function refreshHelp() {
-    if(!helpOwner)return;
-    if(!helpOwner.isConnected||!helpOwner.getClientRects().length){hideHelp();return;}
-    const text=helpText(helpOwner);if(!text){hideHelp();return;}
-    setText(el.helpTooltip,text);el.helpTooltip.classList.remove('hidden');
-    const rect=helpOwner.getBoundingClientRect(),box=el.helpTooltip.getBoundingClientRect();
-    el.helpTooltip.style.left=clamp(rect.left+rect.width/2-box.width/2,8,Math.max(8,innerWidth-box.width-8))+'px';
-    el.helpTooltip.style.top=clamp(rect.bottom+10+box.height>innerHeight?rect.top-box.height-10:rect.bottom+10,8,Math.max(8,innerHeight-box.height-8))+'px';
-  }
-  function showHelp(node) {
-    if(!node)return;hideHelp();helpOwner=node;node.setAttribute('aria-describedby','helpTooltip');refreshHelp();
+  function hideHelp() {helpOwner=null;}
+  function refreshHelp() {}
+  function renderGuide() {
+    const value=$('guideTopic').value;
+    if(value.startsWith('foe:')){const e=enemyCatalog.find(e=>e.id===value.slice(4));el.helpTooltip.textContent=e.emoji+' '+e.name+'\n'+(e.desc||(e.direct?'1秒の予告後に直撃。防壁100%貫通、軽減・完全ガードで対処。4.8秒ごと、予告中に倒せば阻止。':e.bomber?'超高速で接近、左74%で0.55秒後に自爆。爆発前の撃破で阻止。自爆時は報酬なし。':`遠距離から${e.cooldown}秒ごとに射撃。固定照準で先に倒そう。`+(e.debuff==='slow'?'命中で5秒間APS30%低下。':e.debuff==='poison'?'毒は6秒間継続しHP回復を半減。完全ガードで防止。':e.pierce?'シールド60%貫通。軽減・完全ガードで対処。':'')));}
+    else el.helpTooltip.textContent=helpText({dataset:{help:value}});
   }
   function initializeHelp() {
-    const attach=(selector,key)=>document.querySelectorAll(selector).forEach(node=>{
-      node.dataset.help=key;if(!node.matches('button,input,summary,[tabindex]'))node.tabIndex=0;
-    });
-    for(const [id,key] of Object.entries({worldText:'world',killsText:'kills',goldText:'gold',packText:'packs',packBigText:'packs',waveText:'wave',waveType:'wave',progressLabel:'progress',damageText:'damage',apsText:'aps',critText:'crit',luckText:'packChance',splashText:'splash',hpText:'maxHp',armorStat:'armor',barrierStat:'shieldMax',regenStat:'regen',blockStat:'blockChance',playerCard:'player',pauseBtn:'pause',speedBtn:'speed',openBtn:'open',buyPackBtn:'buy',demoPackBtn:'demo',rareOnly:'rareOnly',newOnly:'newOnly',totalOpened:'totalOpened',upgradeEnemyBtn:'enemyUpgrade',synergyCount:'synergy',collectionCount:'build',resetBtn:'reset',skipBtn:'skip',closeModalBtn:'close',dismissModalBtn:'close',killChain:'chain',dangerLabel:'danger',enemyCount:'enemyCount'}))attach('#'+id,key);
-    attach('.resources>div:nth-child(1)','world');attach('.resources>div:nth-child(2)','kills');attach('.resources>div:nth-child(3)','gold');attach('.resources>div:nth-child(4)','packs');
-    for(const [i,key] of ['damage','aps','crit','packChance','splash'].entries())attach(`.combat-stats>div:nth-child(${i+1})`,key);
-    attach('.threat-lab','enemyUpgrade');attach('.card-details summary','lastOpen');
-    attach('#commandHeading','command');attach('#packHeading','packs');attach('#buildHeading','build');
-    attach('.command-grid>div:first-child .section-label','characters');
-    attach('.build-card .section-label:not(.card-build-heading)','synergy');
-    attach('.card-build-heading','build');attach('#synergyList','synergy');
-    for(const button of el.amountButtons.children)button.dataset.help='amount:'+button.dataset.amount;
-    document.addEventListener('pointerover',event=>{const node=event.target.closest('[data-help]');if(node&&node!==helpOwner)showHelp(node);});
-    document.addEventListener('pointerout',event=>{if(helpOwner?.contains(event.target)&&!helpOwner.contains(event.relatedTarget))hideHelp();});
-    document.addEventListener('focusin',event=>{const node=event.target.closest('[data-help]');if(node)showHelp(node);else hideHelp();});
-    document.addEventListener('focusout',event=>{if(helpOwner?.contains(event.target))hideHelp();});
-    document.addEventListener('pointerdown',event=>{const node=event.target.closest('[data-help]');if(event.pointerType==='touch'&&node)showHelp(node);else if(!node)hideHelp();});
-    document.addEventListener('scroll',()=>{
-      // Scroll events can arrive after pointerover/focusin when an item is scrolled into view.
-      if(helpOwner?.matches(':hover,:focus'))refreshHelp();else hideHelp();
-    },true);
-    window.addEventListener('resize',hideHelp);
+    const groups=[['操作',[['openMax','📦 MAX開封'],['enemyUpgrade','🔥 敵強化 Lv.999'],['player','🧙 プレイヤー'],['wave','⚔ WAVE'],['pause','Ⅱ 停止・復帰'],['sound','🔊 サウンド'],['reset','↻ 初期化']]],['敵',enemyCatalog.filter(e=>e.id).map(e=>['foe:'+e.id,e.emoji+' '+e.name])],['キャラ',characterPool.map(c=>['character:'+c.id,c.emoji+' '+c.name])],['カード',cardPool.map(c=>['card:'+c.id,c.emoji+' '+c.name])],['シナジー',synergyPool.map(s=>['synergy:'+s.id,s.emoji+' '+s.name])]];
+    groups.push(['能力・システム',Object.entries(helpDefinitions).filter(([key])=>!groups[0][1].some(([id])=>id===key)).map(([key,value])=>[key,(typeof value==='function'?value():value).split('\n')[0]])]);
+    $('guideTopic').innerHTML=groups.map(([label,entries])=>'<optgroup label="'+label+'">'+entries.map(([id,name])=>'<option value="'+id+'">'+name+'</option>').join('')+'</optgroup>').join('');
+    $('guideBtn').addEventListener('click',()=>{if(state.modalOpen||state.decisionOpen)return;state.helpOpen=true;renderGuide();$('guideDialog').showModal();renderPauseState();});
+    $('guideTopic').addEventListener('change',renderGuide);
+    $('guideCloseBtn').addEventListener('click',()=>$('guideDialog').close());
+    $('guideDialog').addEventListener('close',()=>{state.helpOpen=false;renderPauseState();$('guideBtn').focus({preventScroll:true});});
+    for(const button of document.querySelectorAll('[data-jump]'))button.addEventListener('click',()=>{const section=$(button.dataset.jump);const details=section.closest('details');if(details)details.open=true;focusSection(section.id);});
   }
   function renderUI() {
     const stats=snapshotStats();
@@ -1244,9 +1258,9 @@
     setText(el.armorText,Math.round(stats.armor*100)+'%');setText(el.barrierText,`${fmt(state.shield)} / ${fmt(stats.shieldMax)}`);
     setText(el.regenText,fmtDecimal(stats.regen)+'/s');setText(el.blockText,Math.round(stats.blockChance*100)+'%');
     setText(el.shieldText,fmt(state.shield));el.shieldBar.style.width=(stats.shieldMax?clamp(state.shield/stats.shieldMax*100,0,100):0)+'%';
-    const slowed=isSlowed(),poisoned=isPoisoned();
+    const slowed=isSlowed(),poisoned=isPoisoned(),jammed=isJammed();
     el.playerCard.classList.toggle('slowed',slowed);el.playerCard.classList.toggle('poisoned',poisoned);
-    el.debuffList.classList.toggle('hidden',!slowed&&!poisoned);
+    el.debuffList.classList.toggle('hidden',!slowed&&!poisoned&&!jammed);$('jamDebuff').classList.toggle('hidden',!jammed);setText($('jamDebuff'),`📡 防壁回復停止 ${Math.ceil(Math.max(0,state.debuffs.jamUntil-state.gameTime))}s`);
     el.slowDebuff.classList.toggle('hidden',!slowed);el.poisonDebuff.classList.toggle('hidden',!poisoned);
     setText(el.slowDebuff,`⛓ SLOW ${Math.ceil(Math.max(0,state.debuffs.slowUntil-state.gameTime))}s · APS −30%`);
     setText(el.poisonDebuff,`☣ POISON ${Math.ceil(Math.max(0,state.debuffs.poisonUntil-state.gameTime))}s · 回復 −50%`);
@@ -1292,7 +1306,7 @@
     // Animation uses wall time; combat/buffs use simulation time. Modal pause freezes both combat clocks.
     updatePackAnimation(realDt);
     const wasRespawning=state.respawnRemaining>0;
-    if(wasRespawning&&!state.manualPause&&!state.modalOpen&&!state.decisionOpen) {
+    if(wasRespawning&&!state.manualPause&&!state.modalOpen&&!state.decisionOpen&&!state.helpOpen) {
       const before=Math.ceil(state.respawnRemaining);state.respawnRemaining=Math.max(0,state.respawnRemaining-realDt);
       if(state.respawnRemaining<1e-7)state.respawnRemaining=0;
       if(before!==Math.ceil(state.respawnRemaining)){renderPauseState();renderUI();}
@@ -1433,7 +1447,7 @@
     clean.respawnRemaining=raw.respawnRemaining??0;
     if(typeof clean.respawnRemaining!=='number'||!Number.isFinite(clean.respawnRemaining)||clean.respawnRemaining<0||clean.respawnRemaining>10)throw Error('復帰時間が不正です');
     for(const key of ['world','stage','wave','kills','gold','packs','enemyLevel','unlockedEnemyLevel','totalOpened','normalCards','bestRareBatch','waveTimeouts','infinityProcs','aegisCopies','starfallCopies','bossesDefeated'])if(!Number.isSafeInteger(clean[key]))throw Error('整数が不正：'+key);
-    if(clean.world<1||clean.stage<1||clean.stage>5||clean.wave<1||clean.wave>5||clean.maxHp<1||clean.hp>clean.maxHp||clean.aps<=0||clean.enemyLevel>30||clean.unlockedEnemyLevel>30||clean.enemyLevel>clean.unlockedEnemyLevel)throw Error('進行範囲が不正です');
+    if(clean.world<1||clean.stage<1||clean.stage>5||clean.wave<1||clean.wave>5||clean.maxHp<1||clean.hp>clean.maxHp||clean.aps<=0||clean.enemyLevel>MAX_ENEMY_LEVEL||clean.unlockedEnemyLevel>MAX_ENEMY_LEVEL||clean.enemyLevel>clean.unlockedEnemyLevel)throw Error('進行範囲が不正です');
     for(const key of ['crit','packChance','splash','doubleChance','magnetChance','chainChance','infinityChance','armor','blockChance','chronoSlow'])if(clean[key]>1)throw Error('割合が不正：'+key);
     const knownCharacters=new Set(characterPool.map(c=>c.id));
     const list=(value,allowed)=>{if(!Array.isArray(value)||value.length>allowed.size||new Set(value).size!==value.length||value.some(id=>!allowed.has(id)))throw Error('IDリストが不正です');return [...value];};
@@ -1552,9 +1566,9 @@
     const main=Object.keys(totals).sort((a,b)=>totals[b]-totals[a])[0];
     return `直近：${damageTips[latest.kind][0]} · HP −${fmtDecimal(latest.hp)} / 防壁 −${fmtDecimal(latest.shield)}${latest.blocked?' / 完全ガード':''}。主なHP損失：${damageTips[main][0]}。${damageTips[main][1]}`;
   }
-  const isUrgent=e=>e.alive&&(e.bomber&&e.x>=55||e.berserk&&e.enraged&&e.x>=55||(e.direct||e.support)&&e.x>=e.stopX&&e.shotTimer>=e.cooldown-(e.direct?1.5:1));
-  const threatScore=e=>(isUrgent(e)?100:0)+(e.direct?30:e.bomber?25:e.support==='heal'?24:e.support==='summon'?23:e.shieldDrain?22:e.debuff?20:e.pierce?18:e.ranged?12:0)+e.x/100;
-  const threatLabel=e=>e.direct?'🥷 直撃予告':e.bomber?'💣 自爆接近':e.support==='heal'?'🪷 回復予告':e.support==='summon'?'🪦 召喚予告':'🐗 激昂突進';
+  const isUrgent=e=>e.alive&&(e.bomber&&e.x>=55||e.berserk&&e.enraged&&e.x>=55||(e.direct||e.support||e.sniper)&&e.x>=e.stopX&&e.shotTimer>=e.cooldown-(e.direct||e.sniper?1.5:1));
+  const threatScore=e=>(isUrgent(e)?100:0)+(e.direct?30:e.bomber?25:e.sniper?29:e.support==='shield'?27:e.support==='haste'?26:e.support==='heal'?24:e.support==='summon'?23:e.shieldDrain?22:e.debuff?20:e.pierce?18:e.ranged?12:0)+e.x/100;
+  const threatLabel=e=>e.direct?'🥷 直撃予告':e.bomber?'💣 自爆接近':e.support==='heal'?'🪷 回復予告':e.support==='summon'?'🪦 召喚予告':e.support==='shield'?'🗿 防壁予告':e.support==='haste'?'🥁 加速予告':e.sniper?'🎯 狙撃予告':'🐗 激昂突進';
   function prepareBattle(message='準備中は敵も制限時間も止まっています。') {
     state.ready=false;$('readyMessage').textContent=message;renderPauseState();renderUI();
   }
@@ -1570,13 +1584,6 @@
     const c=characterPool.find(c=>c.id===id),original=state.character,before=snapshotStats();
     state.character=id;const after=snapshotStats();state.character=original;
     return `${c.name}：攻撃 ${fmtDecimal(before.damage)} → ${fmtDecimal(after.damage)}、毎秒攻撃 ${before.aps.toFixed(2)} → ${after.aps.toFixed(2)}、軽減 ${Math.round(before.armor*100)}% → ${Math.round(after.armor*100)}%、防壁上限 ${fmt(before.shieldMax)} → ${fmt(after.shieldMax)}。現在の防壁 ${fmt(state.shield)} → ${fmt(Math.min(state.shield,after.shieldMax))}（減った分は戻りません）。${c.merit}。弱点：${c.drawback}。${state.unlockedCharacters.has(id)?'交代は無料。':`解放費用 ${exact(c.cost)} GOLD。`}`;
-  }
-  function addInfoButtons() {
-    for(const node of document.querySelectorAll('.character-item > button[data-select-character],#openMaxBtn,#openBtn,#buyPackBtn,#demoPackBtn,#upgradeEnemyBtn,#resetBtn')) {
-      if(node.nextElementSibling?.classList.contains('info-btn'))continue;
-      const info=document.createElement('button');info.className='info-btn';info.type='button';info.textContent='ⓘ';info.dataset.help=node.dataset.help||'open';
-      info.setAttribute('aria-label',(node.dataset.selectCharacter||node.id)+'の説明');info.addEventListener('click',event=>{event.stopPropagation();showHelp(info);});node.after(info);
-    }
   }
   function renderExperience() {
     renderArchive();
@@ -1604,7 +1611,7 @@
       setText(button,`${enemy.emoji} ${enemy.id}${isUrgent(enemy)?' ⚠ 危険':''}`);button.setAttribute('aria-label',`${enemy.name} ${enemy.id}に照準を固定`);button.setAttribute('aria-pressed',String(enemy.id===state.targetId));enemy.el.classList.toggle('target-locked',enemy.id===state.targetId);
     }
     setText($('damageReport'),state.lastDefeat?state.lastDefeat+'\n現在：'+damageSummary():damageSummary());
-    addInfoButtons();
+
   }
   $('readyOpenBtn').addEventListener('click',()=>openPacks('max'));
   $('startBattleBtn').addEventListener('click',startBattle);
@@ -1635,10 +1642,17 @@
   el.pauseBtn.addEventListener('click',()=>{state.manualPause=!state.manualPause;renderPauseState();});
   el.resetBtn.addEventListener('click',()=>askDecision('この枠のプレイデータを初期化しますか？','選択中の体験／遊び方のカード・コイン・解放・到達記録を消去します。他の保存枠は保持します。',()=>{resetGame(false);prepareBattle();saveProgress();}));
   el.characterList.addEventListener('click',event=>{const button=event.target.closest('[data-select-character]');if(button)askDecision('キャラクターの変更',characterPreview(button.dataset.selectCharacter),()=>selectCharacter(button.dataset.selectCharacter));});
-  el.upgradeEnemyBtn.addEventListener('click',()=>{const steps=Math.max(state.enemyLevel,state.unlockedEnemyLevel)+1-state.enemyLevel;askDecision('敵強化の確認',`費用 ${exact(enemyUpgradeCost())} GOLD。現在の挑戦Lvから：敵HP ×${fmtDecimal(3**steps)}、攻撃 ×${fmtDecimal(1.12**steps)}、GOLD ×${fmtDecimal(1.6**steps)}、PACK ×${fmtDecimal(1.25**steps)}。通常攻撃の必要時間は約${fmtDecimal(3**steps)}倍。今いる敵にも反映。解放済みLvへの変更は無料・次WAVEから。`,upgradeEnemies);});
+  function requestUpgrade(amount) {
+    const quote=upgradeQuote(amount);if(!quote.count)return;
+    const before=enemyModifiers(),after=enemyModifiers(quote.to);
+    askDecision('🔥 Lv.'+state.enemyLevel+' → '+quote.to,exact(quote.cost)+' GOLD / '+quote.count+'段階を解放。敵HP ×'+fmtDecimal(after.hp/before.hp)+'、攻撃 ×'+fmtDecimal(after.attack/before.attack)+'、GOLD ×'+fmtDecimal(after.gold/before.gold)+'、PACK ×'+fmtDecimal(after.packs/before.packs)+'。今いる敵にも反映。解放済みLvへの変更は無料・次WAVEから。',()=>upgradeEnemies(quote.count));
+  }
+  el.upgradeEnemyBtn.addEventListener('click',()=>requestUpgrade(1));
+  $('upgradeTenBtn').addEventListener('click',()=>requestUpgrade(10));
+  $('upgradeMaxBtn').addEventListener('click',()=>requestUpgrade('max'));
   document.addEventListener('keydown',event=>{
     if(event.code==='Escape')hideHelp();
-    if(!state.modalOpen&&!state.decisionOpen&&!event.repeat&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.target.closest('input,select,textarea,[contenteditable="true"]')) {
+    if(!state.modalOpen&&!state.decisionOpen&&!state.helpOpen&&!event.repeat&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.target.closest('input,select,textarea,[contenteditable="true"]')) {
       if(event.code==='KeyP'){event.preventDefault();if(state.ready)el.pauseBtn.click();}
       if(event.code==='KeyM'){event.preventDefault();openPacks('max');}
       if(event.code==='KeyX'){event.preventDefault();state.targetId=null;renderUI();}
@@ -1674,7 +1688,7 @@
     triggerExplosion,triggerChainLightning,createBlackHole,updateAbilities,updateEnemies,attackEnemy,
     resetGame,step,renderUI,openPacks,closeModal,finishPackAnimation,removeEnemy,killEnemy,hurtPlayer,
     characterPool,selectCharacter,upgradeEnemies,enemyModifiers,enemyUpgradeCost,shieldCapacity,attack,
-    fireEnemyProjectile,helpText,enemyDamage,applyDebuff,updateDebuffs,clearDebuffs,checkWaveDeadline,directStrike,detonateEnemy,castEnemySupport,enemyCatalog,
+    upgradeQuote,rescaleEnemies,MAX_ENEMY_LEVEL,isJammed,fireEnemyProjectile,helpText,enemyDamage,applyDebuff,updateDebuffs,clearDebuffs,checkWaveDeadline,directStrike,detonateEnemy,castEnemySupport,enemyCatalog,
     showPackAnimation,updatePackAnimation,
     session,saveProgress,captureProgress,validateSave,validProgress,saveEnvelope,restoreProgress,switchSlot,giveDemoPacks,prepareBattle,startBattle,compareCharacters,characterPreview,renderResultInventory,renderArchive,exportImage,isUrgent,targetWaveKills,damageSummary,
     fireBossVolley,sound,settings,juiceParticles,juiceLimit,juiceStats,emitBurst,shockwave,updateJuice,

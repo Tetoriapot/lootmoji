@@ -7,7 +7,7 @@
   <title>LOOTMOJI — OVERLOAD / Demo v2</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="arcade-ui">
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><div class="eyebrow">IDLE COMBAT / INFINITE LOOT <span>DEMO v2</span></div><h1>LOOTMOJI<span class="brand-box">📦</span><em>OVERLOAD</em></h1></div>
@@ -21,16 +21,16 @@
     <main>
       <section id="modePanel" class="panel-card experience-panel" aria-label="プレイ環境">
         <div class="control-row"><strong id="modeBadge">通常プレイ / 通常</strong><label>体験 <select id="playMode"><option value="normal">通常プレイ</option><option value="demo">DEMO（100万補給あり）</option></select></label><label>遊び方 <select id="playPreset"><option value="standard">通常</option><option value="relaxed">ゆったり</option><option value="challenge">挑戦</option></select></label><button id="guestBtn" class="ghost-btn">保存しないゲスト試遊</button></div>
-        <p id="presetRules"></p><p id="saveStatus" role="status">保存を確認しています…</p>
+        <details class="mode-info"><summary>ルール・保存状況</summary><p id="presetRules"></p><p id="saveStatus" role="status">保存を確認しています…</p></details>
       </section>
     <div class="quick-pack-bar">
-      <div><span class="eyebrow">QUICK OPEN</span><b>パックで、戦況をひっくり返せ。</b></div>
-      <button id="openMaxBtn" class="quick-open-btn" data-help="openMax"><span>📦 MAX開封</span><b id="openMaxCount">128 PACKS →</b></button>
+      <div class="quick-copy"><span class="eyebrow">OPEN. CRUSH. REPEAT.</span><b>開けろ。強くなれ。</b></div>
+      <button id="openMaxBtn" class="quick-open-btn" data-help="openMax"><span>📦 MAX開封</span><b id="openMaxCount">128 PACKS →</b></button><nav class="arcade-nav" aria-label="ゲーム内移動"><button data-jump="battlePanel">⚔ 戦闘</button><button data-jump="commandPanel">🔥 強化</button><button data-jump="buildPanel">🃏 ビルド</button><button id="guideBtn" aria-haspopup="dialog">？ガイド</button></nav>
     </div>
         <section id="packPanel" class="pack-card panel-card" aria-labelledby="packHeading">
-          <div class="panel-head"><div><div class="eyebrow">MORE PACKS. MORE POWER.</div><h2 id="packHeading">PACK LAB <span class="label">一括開封</span></h2><p>ひと箱から、100万箱のビッグバンまで。</p></div><div class="pack-big"><span>📦 AVAILABLE</span><b id="packBigText">128</b></div></div>
+          <div class="panel-head"><div><div class="eyebrow">MORE PACKS. MORE POWER.</div><h2 id="packHeading">パックを開ける <span class="label">PACK LAB</span></h2><p>カードは即反映。MAXでまとめて強化。</p></div><div class="pack-big"><span>📦 AVAILABLE</span><b id="packBigText">128</b></div></div>
       <div id="readyPanel" class="ready-inline" aria-labelledby="readyTitle">
-        <h2 id="readyTitle">箱を開けて、戦いの準備をしよう</h2>
+        <h2 id="readyTitle">最初の128パックで、戦力爆上げ。</h2>
         <details class="first-guide"><summary>はじめての遊び方</summary><ol><li>まず128個のパックを開封。カードは自動で能力に反映。</li><li>攻撃・防御とキャラクターを確認。</li><li>準備ができたら出撃。通常WAVEは規定数を撃破、5回目はボス討伐。</li></ol></details>
         <p id="readyMessage">準備中は敵も制限時間も止まっています。</p>
         <button id="readyOpenBtn" class="buy-btn">📦 最初のパックをMAX開封</button> <button id="startBattleBtn" class="open-btn">準備完了・出撃 →</button>
@@ -41,8 +41,8 @@
             </div>
             <button id="openBtn" class="open-btn">📦 OPEN ×1 <span>→</span></button>
           </div>
-          <div class="filter-row"><label><input id="rareOnly" type="checkbox"> SSR以上だけ演出</label><label><input id="newOnly" type="checkbox"> NEWだけ表示</label></div>
-          <div class="supply-row"><button id="buyPackBtn" class="buy-btn">🪙 100 → 📦 10</button><button id="demoPackBtn" class="ghost-btn demo-btn">＋1M PACKS <span>DEMO補給</span></button><span id="supplyNotice" class="supply-notice" role="status"></span></div>
+          <details class="pack-tuning"><summary>開封の絞り込み</summary><div class="filter-row"><label><input id="rareOnly" type="checkbox"> SSR以上だけ演出</label><label><input id="newOnly" type="checkbox"> NEWだけ表示</label></div>
+          </details><div class="supply-row"><button id="buyPackBtn" class="buy-btn">🪙 100 → 📦 10</button><button id="demoPackBtn" class="ghost-btn demo-btn">＋1M PACKS <span>DEMO補給</span></button><span id="supplyNotice" class="supply-notice" role="status"></span></div>
           <details class="last-result-details"><summary>直近の開封結果</summary><div id="packResult" class="pack-result empty-state"><span>✦</span><b>YOUR NEXT BUILD IS IN THE BOX.</b><p>パックを開封すると、直近の結果がここに残ります。</p></div>
           </details>
           <div class="lab-footer"><span id="totalOpened">TOTAL OPENED 0</span><span>開封中は戦闘が一時停止します</span></div>
@@ -77,42 +77,43 @@
           <div><span>⚔ DMG 攻撃</span><b id="damageText">10</b></div><div><span>⚡ APS 攻撃/秒</span><b id="apsText">2.0</b></div><div><span>💥 CRIT 会心</span><b id="critText">10%</b></div><div><span>🍀 PACK 入手率</span><b id="luckText">12%</b></div><div><span>💣 SPLASH 範囲</span><b id="splashText">0%</b></div>
         </div>
         <div class="defense-stats"><div id="armorStat" tabindex="0"><span>🛡 GUARD</span><b id="armorText">0%</b></div><div id="barrierStat" tabindex="0"><span>🔷 SHIELD</span><b id="barrierText">0 / 0</b></div><div id="regenStat" tabindex="0"><span>🌿 REGEN</span><b id="regenText">0.4/s</b></div><div id="blockStat" tabindex="0"><span>🤺 BLOCK</span><b id="blockText">0%</b></div></div>
-        <div id="debuffList" class="debuff-list hidden" aria-label="プレイヤーの状態異常"><span id="slowDebuff" class="debuff-slow" data-help="slow" tabindex="0"></span><span id="poisonDebuff" class="debuff-poison" data-help="poison" tabindex="0"></span></div>
+        <div id="debuffList" class="debuff-list hidden" aria-label="プレイヤーの状態異常"><span id="slowDebuff" class="debuff-slow" data-help="slow" tabindex="0"></span><span id="poisonDebuff" class="debuff-poison" data-help="poison" tabindex="0"></span><span id="jamDebuff" class="debuff-jam hidden"></span></div>
       </section>
-      <section class="panel-card experience-panel" aria-label="戦闘支援">
+      <section class="panel-card experience-panel combat-support" aria-label="戦闘支援">
         <div class="control-row"><b id="waveGoal">突破条件</b><span id="targetStatus">照準：自動</span><b id="combatVitals" class="combat-vitals"></b></div>
         <div class="control-row"><label>優先対象 <select id="targetPolicy"><option value="standard">標準（接近順）</option><option value="danger">危険敵を優先</option><option value="boss">ボスを優先</option></select></label><button id="clearTargetBtn" class="ghost-btn">固定解除 [X]</button><label><input id="autoSlow" type="checkbox" checked> 危険時に自動減速</label></div>
         <p id="threatAlert" class="threat-alert" role="status">危険な予告はここに表示します。</p>
-        <div id="targetChoices" class="target-choices" aria-label="敵への固定照準"></div>
+        <details class="tactical-details"><summary>照準リスト・被弾ログ</summary><div id="targetChoices" class="target-choices" aria-label="敵への固定照準"></div>
         <p id="damageReport" class="damage-report" role="status">被ダメージ履歴はまだありません。</p>
-        <details><summary>操作と表示設定</summary><p>敵をクリック・タップ、またはTab→Enterで照準固定＋追撃。P：停止／再開、M：MAX開封、X：固定解除。入力欄ではショートカット無効。</p><div class="control-row"><label>文字サイズ <select id="fontScale"><option value="normal">標準</option><option value="large">大きめ</option></select></label><span>ⓘ は説明専用。購入や交代は実行しません。</span></div></details>
+        </details><details><summary>操作と表示設定</summary><p>敵をクリック・タップ、またはTab→Enterで照準固定＋追撃。P：停止／再開、M：MAX開封、X：固定解除。入力欄ではショートカット無効。</p><div class="control-row"><label>文字サイズ <select id="fontScale"><option value="normal">標準</option><option value="large">大きめ</option></select></label><span>説明は上の「？ガイド」から。通常の操作では説明を表示しません。</span></div></details>
       </section>
-      <section class="command-panel panel-card" aria-labelledby="commandHeading">
-        <div class="panel-head"><div><div class="eyebrow">SPEND GOLD. CHANGE THE FIGHT.</div><h2 id="commandHeading">COMBAT HQ <span class="label">キャラクター解放 / 敵強化</span></h2></div><span class="help-hint">ⓘ ホバー・フォーカスで説明 / スマホは項目をタップ</span></div>
+      <section id="commandPanel" class="command-panel panel-card" aria-labelledby="commandHeading">
+        <div class="panel-head"><div><div class="eyebrow">SPEND GOLD. CHANGE THE FIGHT.</div><h2 id="commandHeading">もっと強く、もっとヤバく。 <span class="label">COMBAT HQ</span></h2></div><span class="help-hint">Lv.999まで敵と報酬を強化</span></div>
         <div class="command-grid"><div><div class="section-label"><h3>PLAYABLE CHARACTERS</h3><span>解放後の交代は無料</span></div><div id="characterList" class="character-list"></div></div>
-          <div class="threat-lab"><div class="section-label"><h3>ENEMY OVERDRIVE</h3><b id="threatLevel">Lv.0 / 30</b></div><p>コインで挑戦Lvを解放。強敵ほど、1体の報酬が増える。</p><div id="threatPreview" class="threat-preview"></div><button id="upgradeEnemyBtn" class="buy-btn">🪙 500 — 敵を強化</button><small>購入時は即反映。解放済みLvへの変更は無料・次WAVEから。</small><label>次WAVEの挑戦Lv <select id="enemyLevelChoice"></select></label><p id="economyReport"></p></div>
+          <div class="threat-lab"><div class="section-label"><h3>ENEMY OVERDRIVE</h3><b id="threatLevel">Lv.0 / 999</b></div><p>コインで挑戦Lvを解放。強敵ほど、1体の報酬が増える。</p><details class="upgrade-math"><summary>強さと報酬の倍率</summary><div id="threatPreview" class="threat-preview"></div></details><button id="upgradeEnemyBtn" class="buy-btn">🪙 500 — 敵を強化</button><div class="bulk-upgrades"><button id="upgradeTenBtn" class="buy-btn">＋10 Lv</button><button id="upgradeMaxBtn" class="buy-btn">MAX強化</button></div><small>購入時は即反映。解放済みLvへの変更は無料・次WAVEから。</small><label>次WAVEの挑戦Lv <select id="enemyLevelChoice"></select></label><details><summary>効率の目安</summary><p id="economyReport"></p></details></div>
         </div><div id="commandNotice" class="command-notice" role="status"></div>
         <details class="comparison-details"><summary>同じビルドで4キャラを比較</summary><p>会心込み・敵防御なしの通常攻撃を比較。NOVAは初撃＋120%爆発、密集は5体すべて爆発範囲内。RANGERの2発目は65%。BRAWLERの反撃は別列（最短0.6秒間隔）。SPLASH・DOUBLE・INFINITY・連鎖・召喚は除外。被弾列は防壁・完全ガード適用前です。</p><div class="table-scroll"><table id="characterCompare"></table></div></details>
       </section>
-        <section class="build-card panel-card" aria-labelledby="buildHeading">
+        <details class="collection-fold"><summary>🃏 ビルド・シナジーを見る</summary><section id="buildPanel" class="build-card panel-card" aria-labelledby="buildHeading">
           <div class="panel-head compact-head"><div><div class="eyebrow">BREAK THE RULES</div><h2 id="buildHeading">YOUR BUILD</h2></div><button id="resetBtn" class="ghost-btn">↻ RESET</button></div>
           <div class="section-label"><h3>ACTIVE SYNERGY</h3><span id="synergyCount">0 / 8</span></div>
           <div id="synergyList" class="synergy-list"></div>
           <div class="section-label card-build-heading"><h3>CARD BUILD</h3><span id="collectionCount">0 / 26</span></div>
           <div id="buildList" class="build-list"></div>
         </section>
-      <section id="preferencesPanel" class="panel-card experience-panel" aria-label="保存と演出の設定">
+      </details><section id="preferencesPanel" class="panel-card experience-panel" aria-label="保存と演出の設定">
         <details><summary>保存・演出・データ管理</summary><p>通常／DEMO × 遊び方の6枠を別々に保存。再開は同じWAVEの冒頭、HP・資源・ビルドは保持。離れている間は進みません。ファイルの場所やブラウザを変える前にバックアップしてください。</p>
           <div class="control-row"><label>開封演出 <select id="animationPolicy"><option value="luxury">毎回豪華</option><option value="special">初入手・UR以上を中心に</option><option value="quick">高速（新規SECRETは演出）</option></select></label><button id="backupBtn" class="ghost-btn">バックアップ保存</button><label class="file-label">バックアップを復元 <input id="restoreFile" type="file" accept="application/json,.json"></label></div>
           <div class="control-row"><label><input type="checkbox" id="fxFlash" checked> 戦闘フラッシュ</label><label><input type="checkbox" id="fxShake" checked> 戦闘の揺れ</label><label><input type="checkbox" id="fxParticles" checked> 戦闘の粒子</label><label><input type="checkbox" id="fxNumbers" checked> ダメージ文字</label></div>
         </details>
       </section>
-      <section class="panel-card experience-panel" aria-labelledby="archiveHeading">
+      <details class="collection-fold"><summary>🏆 図鑑・記録・画像保存</summary><section class="panel-card experience-panel" aria-labelledby="archiveHeading">
         <h2 id="archiveHeading">図鑑・記録・次の目標</h2><p>この体験／遊び方の枠ごとに保存。キャラ別記録は「そのキャラで出撃した最高到達WAVE」です。</p>
         <div id="achievementList" class="achievement-list"></div><div id="characterRecords" class="control-row"></div>
         <details id="codexDetails"><summary>カード図鑑（未入手も表示） <span id="codexCount"></span></summary><div id="codexList" class="codex-list"></div></details>
         <div class="control-row"><button id="exportBuildBtn" class="buy-btn">ビルドを画像保存</button><button id="exportOpenBtn" class="ghost-btn">直近の開封結果を画像保存</button><span id="exportStatus" role="status"></span></div>
       </section>
+      </details>
     </main>
     <footer class="app-footer"><span>LOOTMOJI / OVERLOAD EXPERIMENT</span><span>ローカル完結 · 自動保存／ゲスト試遊 · バックアップ対応</span></footer>
   </div>
@@ -132,7 +133,7 @@
       <div class="modal-footer"><span>SPACE / ESC でスキップ・閉じる</span><button id="closeModalBtn" class="open-btn">戦闘へ戻る →</button></div>
     </div>
   </div>
-  <div id="helpTooltip" class="help-tooltip hidden" role="tooltip"></div>
+  <dialog id="guideDialog" class="guide-dialog" aria-labelledby="guideTitle"><div class="guide-head"><h2 id="guideTitle">？ゲームガイド</h2><button id="guideCloseBtn" class="buy-btn">閉じる ✕</button></div><p>知りたい項目だけ選ぼう。ガイド中は戦闘・復帰カウント停止。</p><label for="guideTopic">調べる項目</label><select id="guideTopic"></select><div id="helpTooltip" class="guide-content" role="status"></div></dialog>
   <dialog id="decisionDialog" aria-labelledby="decisionTitle"><h2 id="decisionTitle"></h2><p id="decisionBody"></p><div class="control-row"><button id="cancelDecision" class="ghost-btn">キャンセル</button><button id="confirmDecision" class="buy-btn">実行する</button></div></dialog>
   <script src="script.js"></script>
 </body>
