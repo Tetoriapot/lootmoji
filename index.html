@@ -18,35 +18,39 @@
         <div class="pack-resource"><span>📦 PACKS</span><b id="packText">128</b></div>
       </div>
     </header>
+    <main>
+      <section id="modePanel" class="panel-card experience-panel" aria-label="プレイ環境">
+        <div class="control-row"><strong id="modeBadge">通常プレイ / 通常</strong><label>体験 <select id="playMode"><option value="normal">通常プレイ</option><option value="demo">DEMO（100万補給あり）</option></select></label><label>遊び方 <select id="playPreset"><option value="standard">通常</option><option value="relaxed">ゆったり</option><option value="challenge">挑戦</option></select></label><button id="guestBtn" class="ghost-btn">保存しないゲスト試遊</button></div>
+        <p id="presetRules"></p><p id="saveStatus" role="status">保存を確認しています…</p>
+      </section>
     <div class="quick-pack-bar">
       <div><span class="eyebrow">QUICK OPEN</span><b>パックで、戦況をひっくり返せ。</b></div>
       <button id="openMaxBtn" class="quick-open-btn" data-help="openMax"><span>📦 MAX開封</span><b id="openMaxCount">128 PACKS →</b></button>
     </div>
-    <main>
-      <section class="panel-card experience-panel" aria-label="プレイ環境">
-        <div class="control-row"><strong id="modeBadge">通常プレイ / 通常</strong><label>体験 <select id="playMode"><option value="normal">通常プレイ</option><option value="demo">DEMO（100万補給あり）</option></select></label><label>遊び方 <select id="playPreset"><option value="standard">通常</option><option value="relaxed">ゆったり</option><option value="challenge">挑戦</option></select></label><button id="guestBtn" class="ghost-btn">保存しないゲスト試遊</button></div>
-        <p id="presetRules"></p><p id="saveStatus" role="status">保存を確認しています…</p>
-        <details><summary>保存・演出・データ管理</summary><p>通常／DEMO × 遊び方の6枠を別々に保存。再開は同じWAVEの冒頭、HP・資源・ビルドは保持。離れている間は進みません。ファイルの場所やブラウザを変える前にバックアップしてください。</p>
-          <div class="control-row"><label>開封演出 <select id="animationPolicy"><option value="luxury">毎回豪華</option><option value="special">初入手・UR以上を中心に</option><option value="quick">高速（新規SECRETは演出）</option></select></label><button id="backupBtn" class="ghost-btn">バックアップ保存</button><label class="file-label">バックアップを復元 <input id="restoreFile" type="file" accept="application/json,.json"></label></div>
-          <div class="control-row"><label><input type="checkbox" id="fxFlash" checked> 戦闘フラッシュ</label><label><input type="checkbox" id="fxShake" checked> 戦闘の揺れ</label><label><input type="checkbox" id="fxParticles" checked> 戦闘の粒子</label><label><input type="checkbox" id="fxNumbers" checked> ダメージ文字</label></div>
-        </details>
-      </section>
-      <section id="readyPanel" class="panel-card experience-panel" aria-labelledby="readyTitle">
+        <section id="packPanel" class="pack-card panel-card" aria-labelledby="packHeading">
+          <div class="panel-head"><div><div class="eyebrow">MORE PACKS. MORE POWER.</div><h2 id="packHeading">PACK LAB <span class="label">一括開封</span></h2><p>ひと箱から、100万箱のビッグバンまで。</p></div><div class="pack-big"><span>📦 AVAILABLE</span><b id="packBigText">128</b></div></div>
+      <div id="readyPanel" class="ready-inline" aria-labelledby="readyTitle">
         <h2 id="readyTitle">箱を開けて、戦いの準備をしよう</h2>
-        <ol><li>まず128個のパックを開封。カードは自動で能力に反映。</li><li>攻撃・防御とキャラクターを確認。</li><li>準備ができたら出撃。通常WAVEは規定数を撃破、5回目はボス討伐。</li></ol>
+        <details class="first-guide"><summary>はじめての遊び方</summary><ol><li>まず128個のパックを開封。カードは自動で能力に反映。</li><li>攻撃・防御とキャラクターを確認。</li><li>準備ができたら出撃。通常WAVEは規定数を撃破、5回目はボス討伐。</li></ol></details>
         <p id="readyMessage">準備中は敵も制限時間も止まっています。</p>
         <button id="readyOpenBtn" class="buy-btn">📦 最初のパックをMAX開封</button> <button id="startBattleBtn" class="open-btn">準備完了・出撃 →</button>
-      </section>
-      <section class="panel-card experience-panel" aria-label="戦闘支援">
-        <div class="control-row"><b id="waveGoal">突破条件</b><span id="targetStatus">照準：自動</span><b id="combatVitals" class="combat-vitals"></b></div>
-        <div class="control-row"><label>優先対象 <select id="targetPolicy"><option value="standard">標準（接近順）</option><option value="danger">危険敵を優先</option><option value="boss">ボスを優先</option></select></label><button id="clearTargetBtn" class="ghost-btn">固定解除 [X]</button><label><input id="autoSlow" type="checkbox" checked> 危険時に自動減速</label></div>
-        <p id="threatAlert" class="threat-alert" role="status">危険な予告はここに表示します。</p>
-        <div id="targetChoices" class="target-choices" aria-label="敵への固定照準"></div>
-        <p id="damageReport" class="damage-report" role="status">被ダメージ履歴はまだありません。</p>
-        <details><summary>操作と表示設定</summary><p>敵をクリック・タップ、またはTab→Enterで照準固定＋追撃。P：停止／再開、M：MAX開封、X：固定解除。入力欄ではショートカット無効。</p><div class="control-row"><label>文字サイズ <select id="fontScale"><option value="normal">標準</option><option value="large">大きめ</option></select></label><span>ⓘ は説明専用。購入や交代は実行しません。</span></div></details>
-      </section>
-      <section class="battle-card" aria-label="自動戦闘">
+      </div>
+          <div class="open-controls">
+            <div id="amountButtons" class="amount-buttons" aria-label="開封数">
+              <button data-amount="1" class="active" aria-pressed="true">×1</button><button data-amount="10" aria-pressed="false">×10</button><button data-amount="100" aria-pressed="false">×100</button><button data-amount="1000" aria-pressed="false">×1K</button><button data-amount="10000" aria-pressed="false">×10K</button><button data-amount="100000" aria-pressed="false">×100K</button><button data-amount="1000000" aria-pressed="false">×1M</button><button data-amount="max" aria-pressed="false">MAX</button>
+            </div>
+            <button id="openBtn" class="open-btn">📦 OPEN ×1 <span>→</span></button>
+          </div>
+          <div class="filter-row"><label><input id="rareOnly" type="checkbox"> SSR以上だけ演出</label><label><input id="newOnly" type="checkbox"> NEWだけ表示</label></div>
+          <div class="supply-row"><button id="buyPackBtn" class="buy-btn">🪙 100 → 📦 10</button><button id="demoPackBtn" class="ghost-btn demo-btn">＋1M PACKS <span>DEMO補給</span></button><span id="supplyNotice" class="supply-notice" role="status"></span></div>
+          <details class="last-result-details"><summary>直近の開封結果</summary><div id="packResult" class="pack-result empty-state"><span>✦</span><b>YOUR NEXT BUILD IS IN THE BOX.</b><p>パックを開封すると、直近の結果がここに残ります。</p></div>
+          </details>
+          <div class="lab-footer"><span id="totalOpened">TOTAL OPENED 0</span><span>開封中は戦闘が一時停止します</span></div>
+        </section>
+      <section id="battlePanel" class="battle-card" tabindex="-1" aria-label="自動戦闘">
+        <div id="respawnStatus" class="respawn-status hidden" role="status"><b>復帰まで <span id="respawnSeconds">10</span> 秒</b><span>この間にパック開封・キャラ変更ができます。開封・一時停止・非表示タブでは待ち時間も停止。</span></div>
         <div class="battle-topline">
+          <button id="battleStartBtn" class="buy-btn">準備完了・出撃 →</button>
           <div class="enemy-progress"><span class="live-dot"></span><span>WAVE</span><b id="waveText">1 / 5</b><span id="waveType" class="wave-type">NORMAL</span></div>
           <div id="waveClock" class="wave-clock" data-help="waveTimer" tabindex="0"><span>⏳ TIME</span><b id="waveTimeText">00:45</b><i><em id="waveTimeBar"></em></i></div>
           <div class="boss-meter"><span id="progressLabel">STAGE PROGRESS</span><div class="mini-bar"><i id="bossProgress"></i></div></div>
@@ -75,6 +79,14 @@
         <div class="defense-stats"><div id="armorStat" tabindex="0"><span>🛡 GUARD</span><b id="armorText">0%</b></div><div id="barrierStat" tabindex="0"><span>🔷 SHIELD</span><b id="barrierText">0 / 0</b></div><div id="regenStat" tabindex="0"><span>🌿 REGEN</span><b id="regenText">0.4/s</b></div><div id="blockStat" tabindex="0"><span>🤺 BLOCK</span><b id="blockText">0%</b></div></div>
         <div id="debuffList" class="debuff-list hidden" aria-label="プレイヤーの状態異常"><span id="slowDebuff" class="debuff-slow" data-help="slow" tabindex="0"></span><span id="poisonDebuff" class="debuff-poison" data-help="poison" tabindex="0"></span></div>
       </section>
+      <section class="panel-card experience-panel" aria-label="戦闘支援">
+        <div class="control-row"><b id="waveGoal">突破条件</b><span id="targetStatus">照準：自動</span><b id="combatVitals" class="combat-vitals"></b></div>
+        <div class="control-row"><label>優先対象 <select id="targetPolicy"><option value="standard">標準（接近順）</option><option value="danger">危険敵を優先</option><option value="boss">ボスを優先</option></select></label><button id="clearTargetBtn" class="ghost-btn">固定解除 [X]</button><label><input id="autoSlow" type="checkbox" checked> 危険時に自動減速</label></div>
+        <p id="threatAlert" class="threat-alert" role="status">危険な予告はここに表示します。</p>
+        <div id="targetChoices" class="target-choices" aria-label="敵への固定照準"></div>
+        <p id="damageReport" class="damage-report" role="status">被ダメージ履歴はまだありません。</p>
+        <details><summary>操作と表示設定</summary><p>敵をクリック・タップ、またはTab→Enterで照準固定＋追撃。P：停止／再開、M：MAX開封、X：固定解除。入力欄ではショートカット無効。</p><div class="control-row"><label>文字サイズ <select id="fontScale"><option value="normal">標準</option><option value="large">大きめ</option></select></label><span>ⓘ は説明専用。購入や交代は実行しません。</span></div></details>
+      </section>
       <section class="command-panel panel-card" aria-labelledby="commandHeading">
         <div class="panel-head"><div><div class="eyebrow">SPEND GOLD. CHANGE THE FIGHT.</div><h2 id="commandHeading">COMBAT HQ <span class="label">キャラクター解放 / 敵強化</span></h2></div><span class="help-hint">ⓘ ホバー・フォーカスで説明 / スマホは項目をタップ</span></div>
         <div class="command-grid"><div><div class="section-label"><h3>PLAYABLE CHARACTERS</h3><span>解放後の交代は無料</span></div><div id="characterList" class="character-list"></div></div>
@@ -82,20 +94,6 @@
         </div><div id="commandNotice" class="command-notice" role="status"></div>
         <details class="comparison-details"><summary>同じビルドで4キャラを比較</summary><p>会心込み・敵防御なしの通常攻撃を比較。NOVAは初撃＋120%爆発、密集は5体すべて爆発範囲内。RANGERの2発目は65%。BRAWLERの反撃は別列（最短0.6秒間隔）。SPLASH・DOUBLE・INFINITY・連鎖・召喚は除外。被弾列は防壁・完全ガード適用前です。</p><div class="table-scroll"><table id="characterCompare"></table></div></details>
       </section>
-      <div class="lower-grid">
-        <section class="pack-card panel-card" aria-labelledby="packHeading">
-          <div class="panel-head"><div><div class="eyebrow">MORE PACKS. MORE POWER.</div><h2 id="packHeading">PACK LAB <span class="label">一括開封</span></h2><p>ひと箱から、100万箱のビッグバンまで。</p></div><div class="pack-big"><span>📦 AVAILABLE</span><b id="packBigText">128</b></div></div>
-          <div class="open-controls">
-            <div id="amountButtons" class="amount-buttons" aria-label="開封数">
-              <button data-amount="1" class="active" aria-pressed="true">×1</button><button data-amount="10" aria-pressed="false">×10</button><button data-amount="100" aria-pressed="false">×100</button><button data-amount="1000" aria-pressed="false">×1K</button><button data-amount="10000" aria-pressed="false">×10K</button><button data-amount="100000" aria-pressed="false">×100K</button><button data-amount="1000000" aria-pressed="false">×1M</button><button data-amount="max" aria-pressed="false">MAX</button>
-            </div>
-            <button id="openBtn" class="open-btn">📦 OPEN ×1 <span>→</span></button>
-          </div>
-          <div class="filter-row"><label><input id="rareOnly" type="checkbox"> SSR以上だけ演出</label><label><input id="newOnly" type="checkbox"> NEWだけ表示</label></div>
-          <div class="supply-row"><button id="buyPackBtn" class="buy-btn">🪙 100 → 📦 10</button><button id="demoPackBtn" class="ghost-btn demo-btn">＋1M PACKS <span>DEMO補給</span></button><span id="supplyNotice" class="supply-notice" role="status"></span></div>
-          <div id="packResult" class="pack-result empty-state"><span>✦</span><b>YOUR NEXT BUILD IS IN THE BOX.</b><p>パックを開封すると、直近の結果がここに残ります。</p></div>
-          <div class="lab-footer"><span id="totalOpened">TOTAL OPENED 0</span><span>開封中は戦闘が一時停止します</span></div>
-        </section>
         <section class="build-card panel-card" aria-labelledby="buildHeading">
           <div class="panel-head compact-head"><div><div class="eyebrow">BREAK THE RULES</div><h2 id="buildHeading">YOUR BUILD</h2></div><button id="resetBtn" class="ghost-btn">↻ RESET</button></div>
           <div class="section-label"><h3>ACTIVE SYNERGY</h3><span id="synergyCount">0 / 8</span></div>
@@ -103,7 +101,12 @@
           <div class="section-label card-build-heading"><h3>CARD BUILD</h3><span id="collectionCount">0 / 26</span></div>
           <div id="buildList" class="build-list"></div>
         </section>
-      </div>
+      <section id="preferencesPanel" class="panel-card experience-panel" aria-label="保存と演出の設定">
+        <details><summary>保存・演出・データ管理</summary><p>通常／DEMO × 遊び方の6枠を別々に保存。再開は同じWAVEの冒頭、HP・資源・ビルドは保持。離れている間は進みません。ファイルの場所やブラウザを変える前にバックアップしてください。</p>
+          <div class="control-row"><label>開封演出 <select id="animationPolicy"><option value="luxury">毎回豪華</option><option value="special">初入手・UR以上を中心に</option><option value="quick">高速（新規SECRETは演出）</option></select></label><button id="backupBtn" class="ghost-btn">バックアップ保存</button><label class="file-label">バックアップを復元 <input id="restoreFile" type="file" accept="application/json,.json"></label></div>
+          <div class="control-row"><label><input type="checkbox" id="fxFlash" checked> 戦闘フラッシュ</label><label><input type="checkbox" id="fxShake" checked> 戦闘の揺れ</label><label><input type="checkbox" id="fxParticles" checked> 戦闘の粒子</label><label><input type="checkbox" id="fxNumbers" checked> ダメージ文字</label></div>
+        </details>
+      </section>
       <section class="panel-card experience-panel" aria-labelledby="archiveHeading">
         <h2 id="archiveHeading">図鑑・記録・次の目標</h2><p>この体験／遊び方の枠ごとに保存。キャラ別記録は「そのキャラで出撃した最高到達WAVE」です。</p>
         <div id="achievementList" class="achievement-list"></div><div id="characterRecords" class="control-row"></div>
