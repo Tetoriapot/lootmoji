@@ -96,11 +96,14 @@
         <details class="comparison-details"><summary>同じビルドで4キャラを比較</summary><p>会心込み・敵防御なしの通常攻撃を比較。NOVAは初撃＋120%爆発、密集は5体すべて爆発範囲内。RANGERの2発目は65%。BRAWLERの反撃は別列（最短0.6秒間隔）。SPLASH・DOUBLE・INFINITY・連鎖・召喚は除外。被弾列は防壁・完全ガード適用前です。</p><div class="table-scroll"><table id="characterCompare"></table></div></details>
       </section>
         <details class="collection-fold"><summary>🃏 ビルド・シナジーを見る</summary><section id="buildPanel" class="build-card panel-card" aria-labelledby="buildHeading">
-          <div class="panel-head compact-head"><div><div class="eyebrow">BREAK THE RULES</div><h2 id="buildHeading">YOUR BUILD</h2></div><button id="resetBtn" class="ghost-btn">↻ RESET</button></div>
-          <div class="section-label"><h3>ACTIVE SYNERGY</h3><span id="synergyCount">0 / 8</span></div>
+          <div class="panel-head compact-head"><h2 id="buildHeading">ビルド</h2><button id="resetBtn" class="ghost-btn">↻ RESET</button></div>
+          <div class="build-columns"><div class="build-group">
+          <div class="section-label"><h3>シナジー</h3><span id="synergyCount">0 / 8</span></div>
           <div id="synergyList" class="synergy-list"></div>
-          <div class="section-label card-build-heading"><h3>CARD BUILD</h3><span id="collectionCount">0 / 26</span></div>
-          <div id="buildList" class="build-list"></div>
+          </div><div class="build-group">
+          <div class="section-label card-build-heading"><h3>所持カード · 自動適用</h3><span id="collectionCount">0 / 26</span></div>
+          <div id="buildList" class="build-list" tabindex="0" role="region" aria-label="所持カード一覧（スクロールできます）"></div>
+          </div></div>
         </section>
       </details><section id="preferencesPanel" class="panel-card experience-panel" aria-label="保存と演出の設定">
         <details><summary>保存・演出・データ管理</summary><p>通常／DEMO × 遊び方の6枠を別々に保存。再開は同じWAVEの冒頭、HP・資源・ビルドは保持。離れている間は進みません。ファイルの場所やブラウザを変える前にバックアップしてください。</p>

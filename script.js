@@ -394,6 +394,13 @@
     juiceContext?.setTransform(dpr,0,0,dpr,0,0);
   });
   resizeObserver.observe(el.battlefield);
+  // Match navigation clearance to the actual sticky bar, including wrapped mobile controls.
+  const navigationBar=document.querySelector('.quick-pack-bar');
+  const navigationObserver=new ResizeObserver(()=>{
+    const top=parseFloat(getComputedStyle(navigationBar).top)||0;
+    document.documentElement.style.setProperty('--navigation-clearance',`${Math.ceil(navigationBar.getBoundingClientRect().height+top+12)}px`);
+  });
+  navigationObserver.observe(navigationBar);
   function maxEnemies() { return state.world>=10?36:([12,16,20,23,26][state.world-1]||26+(state.world-5)*2); }
   const worldScale=()=>Math.min(1e75,1.8*Math.pow(1.9,Math.min(state.world-1,270))*(1+(state.stage-1)*.38));
   const targetWaveKills=()=>18+state.stage*4+Math.min(state.world,40)*2;
