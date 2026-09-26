@@ -189,7 +189,7 @@
     const early=Math.min(30,level),late=Math.max(0,level-30);
     return {hp:3**early*1.16**late,attack:1.12**early*1.04**late,gold:1.6**early*1.012**late,packs:1.25**early*1.008**late};
   };
-  const enemyDamage=(amount,enemy)=>finiteStat(amount*1.75*enemyModifiers().attack*(enemy?.elite?1.4:1)*(enemy?.berserk&&enemy.enraged?1.5:1));
+  const enemyDamage=(amount,enemy)=>finiteStat(amount*1.75*enemyModifiers().attack*(enemy?.elite?1.4:1)*(enemy?.berserk&&enemy.enraged?1.5:1)*(enemy?enemyLinkEffects(enemy).attack:1));
   const enemyUpgradeCost=(level=Math.max(state.enemyLevel,state.unlockedEnemyLevel))=>Math.floor(500*1.8**Math.min(30,level)*(1+Math.max(0,level-30)/20)**2);
   function upgradeQuote(amount=1) {
     const from=Math.max(state.enemyLevel,state.unlockedEnemyLevel),limit=amount==='max'?MAX_ENEMY_LEVEL:Math.min(MAX_ENEMY_LEVEL,from+amount);
@@ -334,8 +334,50 @@
     {id:'jammer',name:'STATIC JAMMER',emoji:'📡',hp:85,speed:5,gold:35,size:44,ranged:true,shot:'〰',cooldown:4,stopX:35,attack:11,debuff:'jam',desc:'電波弾が命中すると3秒間、防壁の自然回復とAEGISの補充準備を停止。HP回復・攻撃・開封による防壁補充は有効。完全ガードで防止。'},
     {id:'sniper',name:'RAIL SNIPER',emoji:'🎯',hp:65,speed:4.8,gold:38,size:43,ranged:true,shot:'➠',cooldown:6,stopX:19,attack:38,pierce:.4,sniper:true,desc:'1.5秒の照準予告後に高威力の単発弾。防壁を40%貫通。攻撃間隔6秒、HPは低い。予告中の集中攻撃で倒そう。'},
     {id:'haste',name:'WAR DRUMMER',emoji:'🥁',hp:115,speed:4.5,gold:34,size:45,ranged:true,support:'haste',cooldown:5,stopX:30,desc:'5秒ごとに周囲の仲間へ3秒間の移動・攻撃準備速度1.6倍を付与。重複せず時間更新。1秒の予告中に倒して阻止。'},
+    {id:'relay',name:'RAIL CONDUCTOR',emoji:'🧲',hp:95,speed:4.8,gold:40,size:45,ranged:true,shot:'⚡',cooldown:4.8,stopX:28,attack:9,linkRole:'rail',desc:'周囲に攻撃型の射手が2体以上いると「電磁射線」。周囲の射手（ボス・支援役以外）の攻撃準備1.3倍、弾の防壁貫通+20pt（最大85%）。'},
+    {id:'brood',name:'BROOD MATRON',emoji:'🐝',hp:140,speed:4,gold:42,size:48,ranged:true,support:'brood',cooldown:6,stopX:31,linkRole:'brood',desc:'6秒ごとに雑兵1体を召喚、配下最大3体。周囲に召喚雑兵が2体以上いると「群体凶暴」：雑兵の移動1.3倍・攻撃1.5倍。女王の撃破で自身の配下も消滅。'},
+    {id:'prism',name:'PRISM ANCHOR',emoji:'💠',hp:130,speed:4.4,gold:43,size:45,ranged:true,support:'anchor',cooldown:7,stopX:34,linkRole:'prism',desc:'周囲にAEGIS WARDENか堡塁ボスがいると「共鳴防壁」。周囲の防壁を持つ仲間の被ダメージを30%軽減。防壁がなくなるか結晶・防壁役を倒すと解除。'},
+    {id:'beacon',name:'CURSE BEACON',emoji:'🕯️',hp:90,speed:4.7,gold:41,size:45,ranged:true,shot:'✧',cooldown:5,stopX:30,attack:9,debuff:'slow',linkRole:'curse',desc:'周囲に別のデバフ敵がいると「呪いの連鎖」。プレイヤーが毒・鈍足・防壁回復停止中、周囲の敵の攻撃威力1.35倍（毒の継続ダメージを再増幅しない）。'},
   ];
   const bossCatalog=['👹','🐲','🐙','👁️','🤖','🌞','🕳️'];
+  const bossProfiles=[
+    {id:'bastion',name:'堡塁王',emoji:'🏰',skill:'防壁再装填',interval:9,escorts:['warden','prism'],desc:'9秒ごとに防壁を最大HPの15%補充（最大3回）。防壁役＋結晶の共鳴で硬くなる。',hint:'先に💠結晶→🗿防壁役を倒す。特殊行動の予告中にボス防壁を割ると中断し、3秒間ボスへのダメージ1.35倍。'},
+    {id:'swarm',name:'群体皇后',emoji:'🐝',skill:'群体招集',interval:8,escorts:['brood','haste'],desc:'8秒ごとに雑兵3体を呼ぶ。ボスの配下は最大6体。女王の凶暴化と鼓手の加速が重なる。',hint:'🐝女王を先に倒して群体凶暴を解除。範囲攻撃で雑兵を一掃。予告中のボス防壁破壊で招集を阻止できる。'},
+    {id:'oracle',name:'虚眼の審判者',emoji:'👁️',skill:'虚空裁定',interval:10,escorts:['beacon','jammer'],desc:'10秒ごとに防壁80%貫通の直撃＋3秒間の防壁回復停止。通常弾幕も35%貫通。呪い役とジャマーが火力を支える。',hint:'🕯️呪い役を倒して状態異常中の被害増を止める。軽減・完全ガードを用意。予告中にボス防壁を割って直撃を阻止。'},
+  ];
+  const commonNames=['RUST RAT','VENOM SNAKE','NIGHT BAT','LOST GHOST','BONE WALKER','ONI BRUTE','IRON WALKER','VOID SCOUT'];
+  enemyCatalog.slice(0,8).forEach((e,i)=>{e.id='front'+i;e.name=commonNames[i];e.desc='前衛の接触型。右端に到達するとダメージ。WORLDとSTAGEが進むにつれて強い前衛が混ざる。';});
+  const enemyLinkCatalog=[
+    {id:'rail',name:'電磁射線',emoji:'🧲',condition:'中継役＋攻撃型の射手2体以上（中継役以外）',effect:'範囲内の射手：攻撃準備×1.3、防壁貫通+20pt（上限85%）。ボス・支援役・直撃敵は対象外。',hint:'🧲中継役を優先。射手を減らして2体未満にしても解除。'},
+    {id:'brood',name:'群体凶暴',emoji:'🐝',condition:'女王＋召喚雑兵2体以上',effect:'範囲内の雑兵：移動×1.3、攻撃×1.5。召喚役の雑兵と分裂クラゲの子も対象。',hint:'🐝女王を先に倒す。密集にはNOVAやSPLASH。'},
+    {id:'prism',name:'共鳴防壁',emoji:'💠',condition:'結晶＋防壁役または堡塁王',effect:'範囲内で防壁が残る仲間：被ダメージ30%軽減。防壁が切れると軽減も解除。',hint:'防壁のない💠結晶を狙う。回復役がいる場合も結晶を先に処理。'},
+    {id:'curse',name:'呪いの連鎖',emoji:'🕯️',condition:'呪い役＋別のデバフ敵',effect:'プレイヤーが毒・鈍足・防壁回復停止中、範囲内の敵の攻撃×1.35。継続毒は再増幅しない。',hint:'🕯️呪い役を優先。PARRYはデバフの付与も防ぐ。'},
+  ];
+  const nearEnemy=(a,b,radius=38)=>Math.hypot(a.x-b.x,(a.y-b.y)*.6)<radius;
+  function activeEnemyLinks() {
+    return state.enemies.filter(e=>e.alive&&e.linkRole).flatMap(source=>{
+      const allies=state.enemies.filter(e=>e.alive&&e!==source&&nearEnemy(source,e));
+      const role=source.linkRole,enabled=role==='rail'?allies.filter(e=>e.ranged&&!e.support&&!e.direct&&!e.boss&&e.type!=='relay').length>=2:role==='brood'?allies.filter(e=>e.summoned).length>=2:role==='prism'?allies.some(e=>e.support==='shield'||e.bossProfile==='bastion'):allies.some(e=>e.debuff);
+      return enabled?[{source,role,info:enemyLinkCatalog.find(c=>c.id===role)}]:[];
+    });
+  }
+  function enemyLinkEffects(enemy,links=activeEnemyLinks()) {
+    const roles=new Set(links.filter(link=>nearEnemy(link.source,enemy)).map(link=>link.role));
+    const rail=roles.has('rail')&&enemy.ranged&&!enemy.support&&!enemy.direct&&!enemy.boss;
+    return {shotSpeed:rail?1.3:1,pierce:rail?.2:0,move:roles.has('brood')&&enemy.summoned?1.3:1,
+      attack:(roles.has('brood')&&enemy.summoned?1.5:1)*(roles.has('curse')&&(isSlowed()||isPoisoned()||isJammed())?1.35:1),guard:roles.has('prism')&&enemy.shield>0?.3:0};
+  }
+  const enemyHints={archer:'接近してこない射手も残すと危険。RANGERか固定照準で先に倒す。',warlock:'鈍足でWAVE時間が厳しくなる。毒・呪い役と並んだら優先。',piercer:'防壁だけに頼らずARMORやPARRYも使う。',plague:'毒は回復も妨げる。状態異常中は呪い役との組み合わせに注意。',assassin:'1秒の直撃予告中に固定照準。防壁100%貫通に注意。',bomber:'接近したら最優先。NOVAや範囲攻撃で群れごと消す。',medic:'回復役を放置するとボスが長引く。回復予告中に倒す。',summoner:'雑兵より召喚主を狙う。主が倒れると自身の配下も消える。',siphon:'防壁の量だけでは解決しない。完全ガードと早期撃破を併用。',boar:'激昂で装甲が外れたら集中攻撃。高速突進を見送らない。',thrall:'単体報酬なし。術者の撃破か範囲攻撃でまとめて処理。',warden:'結晶がいると共鳴防壁になる。結晶→防壁役の順に崩す。',splitter:'撃破後にも敵が残る。範囲攻撃の追撃を用意。',shard:'女王と鼓手の組み合わせで高速化する。群れごと処理。',jammer:'防壁補充が止まる3秒を、HPと軽減で耐える。PARRYで付与を防げる。',sniper:'1.5秒の予告が狙い目。中継役と並ぶと射撃頻度と貫通率が上がる。',haste:'雑兵や自爆敵を加速する。女王や召喚役とセットなら早めに倒す。',relay:'中継役そのものを固定照準。射手を2体未満にする方法も有効。',brood:'別の召喚主の雑兵も強化する。女王の撃破で群体凶暴を解除。',prism:'共鳴の中心を倒すと仲間の軽減が即解除。盾が張られる前が狙い目。',beacon:'状態異常がついてからの追撃が痛い。呪い役を先に倒して火力増加を止める。'};
+  function enemyDescription(e){return e.desc||(e.direct?'予告付きで防壁100%貫通の直撃。':e.bomber?'超高速で接近し、0.55秒の導火線後に自爆。':`${e.cooldown}秒ごとに遠距離攻撃。`+(e.debuff==='slow'?'命中で5秒間APS30%低下。':e.debuff==='poison'?'6秒間の毒＋HP回復半減。':e.pierce?'防壁60%貫通。':''));}
+  const strategyHints=[
+    ['開封→出撃','最初の128パックをMAX開封。カードは即反映。敵に負けた10秒の待機中にも強化できる。'],
+    ['先に連携の中心を倒す','🧲中継役・🐝女王・💠結晶・🕯️呪い役を固定照準。条件が崩れると連携は即解除。同種の連携は重複しない。効果範囲は中心から38（画面座標）未満。'],
+    ['予告を利用する','危険時の自動減速を有効に。ボスの特殊行動は1.5秒予告、予告中の防壁破壊で中断＋3秒間被ダメージ1.35倍。'],
+    ['ボスの支援役を掃除','堡塁王は結晶と防壁役、群体皇后は女王と鼓手、虚眼は呪い役とジャマーが随伴。討伐するとそのボスの随伴と配下は消える。'],
+    ['防壁だけで受けない','直撃・貫通・防壁吸収・回復停止がある。ARMOR・PARRY・HPも育てる。毒の継続ダメージには完全ガード不可。'],
+    ['キャラの弱点を補う','密集にはNOVA、射手にはRANGER、被弾反撃ならBRAWLER。交代の比較で防壁・被ダメージの変化を確認。'],
+    ['敵強化は戻せる','Lv.999まで解放できるがHPも上がる。倒し切れないなら解放済みの低いLvへ予約変更。次WAVEから無料で適用。'],
+  ];
   const fxLimits={projectile:40,damage:60,particle:80};
   const effects={projectile:[],damage:[],particle:[]};
   const juiceParticles=[],juiceLimit=360,juiceStats={maxParticles:0};
@@ -470,9 +512,14 @@
     if(state.world>=2)rangedPool.push('jammer');
     if(state.world>=2&&state.enemies.filter(e=>e.support==='shield').length<2)rangedPool.push('warden');
     if(state.world>=3&&state.enemies.filter(e=>e.support==='haste').length<2)rangedPool.push('haste');
+    if(state.world>=2&&state.enemies.filter(e=>e.type==='relay').length<2)rangedPool.push('relay');
+    if(state.world>=2&&state.enemies.filter(e=>e.type==='prism').length<2)rangedPool.push('prism');
+    if(state.world>=3&&state.enemies.filter(e=>e.type==='brood').length<2)rangedPool.push('brood');
+    if(state.world>=3&&state.enemies.filter(e=>e.type==='beacon').length<2)rangedPool.push('beacon');
     const rangedType=!small&&Math.random()<.3?rangedPool[Math.floor(Math.random()*rangedPool.length)]:null;
     const bomberType=(state.world>=2||state.stage>=2||state.wave>=2)&&Math.random()<(small?.18:.08)?'bomber':null;
     const base=boss?{emoji:bossCatalog[(state.world-1)%bossCatalog.length],hp:1600,speed:4.2,gold:220,size:98}:(enemyCatalog.find(e=>e.id===(options.type||bomberType||rangedType))||enemyCatalog[index]);
+    const profile=boss?(bossProfiles.find(p=>p.id===options.bossProfile)||bossProfiles[(state.world+state.stage-2)%bossProfiles.length]):null;
     const baseHp=finiteStat(base.hp*worldScale()*(boss?1.5:elite?5:state.waveType==='swarm'?.36:1)),hp=finiteStat(baseHp*enemyModifiers().hp);
     const enemy={id:state.nextEnemyId++,boss,elite,alive:true,emoji:base.emoji,hp,maxHp:hp,baseHp,
       speed:base.speed*1.22*(1+Math.min(2,state.world*.025))*(options.formation==='rush'?1.7:1),
@@ -482,11 +529,14 @@
       type:base.id||'melee',pierce:base.pierce||0,debuff:base.debuff||null,
       direct:!!base.direct,bomber:!!base.bomber,fuseTimer:0,shieldMax:boss?finiteStat(hp*.6):0,shield:boss?finiteStat(hp*.6):0,
       cooldown:base.cooldown||3,stopX:base.stopX||90,attackPower:base.attack||0,bossTimer:0,enraged:false,
-      support:base.support||null,armor:base.armor||0,berserk:!!base.berserk,shieldDrain:base.shieldDrain||0,summoned:!!base.summoned,summonerId:options.summonerId??null,desc:base.desc||'',splitter:!!base.splitter,sniper:!!base.sniper,hasteUntil:0};
+      support:base.support||null,armor:base.armor||0,berserk:!!base.berserk,shieldDrain:base.shieldDrain||0,summoned:!!base.summoned,summonerId:options.summonerId??null,desc:base.desc||'',splitter:!!base.splitter,sniper:!!base.sniper,hasteUntil:0,
+      linkRole:base.linkRole||null,bossProfile:profile?.id||null,skillTimer:0,skillUses:0,exposedUntil:0,bossOwner:options.bossOwner??null};
+    if(profile){enemy.name=profile.name;enemy.desc=profile.desc+' '+profile.hint;enemy.skillInterval=profile.interval;}
     enemy.el=document.createElement('button');enemy.el.type='button';enemy.el.className='enemy'+(boss?' boss':'')+(elite?' elite':'')+(enemy.ranged?' ranged':'')+(enemy.pierce?' piercing':'')+(enemy.debuff==='slow'?' hexer':enemy.debuff==='poison'?' toxic':'');
     if(enemy.direct)enemy.el.classList.add('direct');if(enemy.bomber)enemy.el.classList.add('bomber');
     if(enemy.support)enemy.el.classList.add('support-'+enemy.support);if(enemy.berserk)enemy.el.classList.add('rage-boar');if(enemy.shieldDrain)enemy.el.classList.add('shield-leech');if(enemy.summoned)enemy.el.classList.add('summoned');
     if(enemy.splitter)enemy.el.classList.add('splitter');if(enemy.sniper)enemy.el.classList.add('sniper');if(enemy.debuff==='jam')enemy.el.classList.add('jammer');
+    if(enemy.linkRole)enemy.el.classList.add('link-'+enemy.linkRole);
     enemy.el.dataset.help='enemy:'+enemy.id;
     enemy.el.setAttribute('aria-label',(boss?'ボス ':elite?'エリート ':'敵 ')+enemy.emoji+' '+enemy.name+'を攻撃');
     enemy.el.style.fontSize=`clamp(${Math.round(enemy.size*.65)}px, ${enemy.size/10}vw, ${enemy.size}px)`;
@@ -523,10 +573,12 @@
     state.waveLimit=({normal:45,rush:35,elite:50,swarm:40,boss:75})[state.waveType]*presets[session.preset].time;state.waveWarning=11;
     if(state.waveType==='boss') {
       // Always reserve room for the boss even if the preceding wave filled the field.
-      while(state.enemies.length>maxEnemies()-5)removeEnemy(state.enemies[0]);
-      spawnEnemy({boss:true,x:13,y:50});state.bossSpawned=true;
+      while(state.enemies.length>maxEnemies()-7)removeEnemy(state.enemies[0]);
+      const boss=spawnEnemy({boss:true,x:13,y:50});state.bossSpawned=true;
+      const profile=bossProfiles.find(p=>p.id===boss.bossProfile);
+      profile.escorts.forEach((type,i)=>spawnEnemy({type,x:17+i*9,y:i?73:27,bossOwner:boss.id}));
       spawnGroup({count:4,formation:'line',x:5});state.bossSlowUntil=state.effectTime+.65;
-      showBanner('ARMORED BOSS',`シールドを砕け / 激昂時に再展開 / ${state.waveLimit}秒`);shakeBattlefield(4,.28);sound.play('boss');battleFlash('#ff749a',.17);
+      showBanner(profile.name,`${profile.skill}に注意 / 防壁破壊で予告中断 / ${state.waveLimit}秒`);shakeBattlefield(4,.28);sound.play('boss');battleFlash('#ff749a',.17);
     } else if(state.waveType==='swarm') {
       spawnGroup({count:maxEnemies()-state.enemies.length,formation:'cluster',x:5,small:true});
       showBanner('⚠ SWARM','大量の敵を、まとめて吹き飛ばせ。');sound.play('wave');
@@ -539,6 +591,7 @@
   function removeEnemy(enemy) {
     if(state.targetId===enemy.id)state.targetId=null;
     enemy.alive=false;const index=state.enemies.indexOf(enemy);if(index>=0)state.enemies.splice(index,1);enemy.el.remove();
+    for(const child of [...state.enemies])if(child.summonerId===enemy.id||child.bossOwner===enemy.id)removeEnemy(child);
   }
   function checkWaveDeadline() {
     const remaining=state.waveLimit-state.waveElapsed,seconds=Math.ceil(remaining);
@@ -588,7 +641,8 @@
     state.shield-=drained;
     let damage=blocked?0:finiteStat(amount*(currentCharacter().incoming||1))*(1-stats.armor);
     // Pierce bypasses only the shield. Armor and a successful parry still protect HP.
-    const piercing=damage*(periodic?0:source?.pierce||0);
+    const extraPierce=!periodic&&source?enemyLinkEffects(source).pierce:0;
+    const piercing=damage*(periodic?0:Math.max(source?.pierce||0,Math.min(.85,(source?.pierce||0)+extraPierce)));
     const absorbed=Math.min(state.shield,damage-piercing);state.shield-=absorbed;damage-=absorbed;
     recordDamage(periodic?'poison':source?.shieldDrain?'drain':source?.direct?'direct':source?.bomber?'bomb':source?.pierce?'pierce':source?.boss?'boss':source?.ranged?'shot':'contact',damage,absorbed+drained,blocked);
     state.hp=Math.max(0,state.hp-damage);state.hurtUntil=state.effectTime+.3;el.playerCard.classList.add('hurt');
@@ -621,6 +675,7 @@
       if(!enemy.alive)continue;
       const hasted=enemy.hasteUntil>state.gameTime;enemy.el.classList.toggle('hasted',hasted);
       const enemyDt=dt*(1-state.chronoSlow)*(hasted?1.6:1);
+      const links=enemyLinkEffects(enemy);
       if(enemy.berserk&&!enemy.enraged&&enemy.hp/enemy.maxHp<=.45) {
         enemy.enraged=true;enemy.armor=0;enemy.el.classList.add('enraged');sound.play('enemy',1.2);
         emitBurst(enemy.x,enemy.y,'#ffb16c',22);popDamage(enemy.x,enemy.y-10,'🐗 激昂！');
@@ -633,16 +688,18 @@
         }
         enemy.bossTimer+=enemyDt*(enemy.enraged?1.6:1);
         if(enemy.bossTimer>=4.2){enemy.bossTimer%=4.2;fireBossVolley(enemy);}
+        if(enemy.bossProfile!=='bastion'||enemy.skillUses<3){enemy.skillTimer+=enemyDt;enemy.el.classList.toggle('skill-aiming',bossWindingUp(enemy));if(enemy.skillTimer>=enemy.skillInterval){enemy.skillTimer=0;executeBossSkill(enemy);if(state.waveSerial!==serial)break;}}
       }
       if(enemy.bomber) {
-        if(enemy.x<74)enemy.x=Math.min(74,enemy.x+enemy.speed*enemyDt);
+        if(enemy.x<74)enemy.x=Math.min(74,enemy.x+enemy.speed*enemyDt*links.move);
         else {enemy.fuseTimer+=enemyDt;enemy.el.classList.add('fusing');if(enemy.fuseTimer>=.55){detonateEnemy(enemy);if(state.waveSerial!==serial)break;continue;}}
         positionEnemy(enemy);if(state.effectTime>=enemy.hitUntil)enemy.el.classList.remove('hit');continue;
       }
       if(enemy.ranged&&enemy.x>=enemy.stopX&&enemy.x<90) {
-        enemy.shotTimer+=enemyDt;enemy.el.classList.toggle('aiming',enemy.shotTimer>=enemy.cooldown-(enemy.sniper?1.5:enemy.direct||enemy.support?1:.65));
+        if(enemy.support==='anchor'){positionEnemy(enemy);if(state.effectTime>=enemy.hitUntil)enemy.el.classList.remove('hit');continue;}
+        enemy.shotTimer+=enemyDt*links.shotSpeed;enemy.el.classList.toggle('aiming',enemy.shotTimer>=enemy.cooldown-(enemy.sniper?1.5:enemy.direct||enemy.support?1:.65));
         if(enemy.shotTimer>=enemy.cooldown){enemy.shotTimer%=enemy.cooldown;if(enemy.support)castEnemySupport(enemy);else if(enemy.direct)directStrike(enemy);else fireEnemyProjectile(enemy);if(state.waveSerial!==serial)break;}
-      } else if(!enemy.boss||enemy.x<(enemy.enraged?68:58))enemy.x+=enemy.speed*enemyDt*(enemy.enraged?(enemy.berserk?2.5:1.5):1);
+      } else if(!enemy.boss||enemy.x<(enemy.enraged?68:58))enemy.x+=enemy.speed*enemyDt*links.move*(enemy.enraged?(enemy.berserk?2.5:1.5):1);
       if(enemy.x>=91) {
         const boss=enemy.boss;
         if(hurtPlayer(enemyDamage(boss?50+state.world*5:10+state.world*2,enemy),enemy))break;
@@ -674,9 +731,9 @@
       const allies=state.enemies.filter(e=>e!==enemy&&e.alive&&Math.hypot(e.x-enemy.x,(e.y-enemy.y)*.6)<38).slice(0,6);
       for(const target of allies){target.hasteUntil=state.gameTime+3;drawLightning(enemy,target);}
       if(allies.length){sound.play('wave',.6);popDamage(enemy.x,enemy.y-10,'🥁 加速！');}
-    } else if(enemy.support==='summon') {
+    } else if(enemy.support==='summon'||enemy.support==='brood') {
       const owned=state.enemies.filter(e=>e.summonerId===enemy.id).length;
-      const count=Math.min(2,4-owned,maxEnemies()-state.enemies.length);
+      const count=Math.min(enemy.support==='brood'?1:2,(enemy.support==='brood'?3:4)-owned,maxEnemies()-state.enemies.length);
       for(let i=0;i<count;i++)spawnEnemy({type:'thrall',summonerId:enemy.id,x:Math.min(65,enemy.x+4),y:clamp(enemy.y+(i?12:-12),20,80)});
       if(count>0){sound.play('enemy');emitBurst(enemy.x,enemy.y,'#c2a5ff',26);popDamage(enemy.x,enemy.y-8,'🦴 増援 +'+count);}
     }
@@ -710,7 +767,21 @@
     sound.play('enemy',1.4);shockwave(enemy.x,enemy.y,'#ff6c9e',80);
     const amount=enemyDamage((8+state.world*3)*(enemy.enraged?1.3:1),enemy),shots=enemy.enraged?5:3;
     for(let i=0;i<shots;i++)addFx('projectile','enemy-shot boss-shot','🔴',enemy.x,enemy.y+(i-(shots-1)/2)*7,.7+i*.13,
-      {target:{x:86,y:48},startX:enemy.x,startY:enemy.y+(i-(shots-1)/2)*7,onFinish:()=>hurtPlayer(amount,enemy)});
+      {target:{x:86,y:48},startX:enemy.x,startY:enemy.y+(i-(shots-1)/2)*7,onFinish:()=>hurtPlayer(amount,enemy.bossProfile==='oracle'?{...enemy,pierce:.35}:enemy)});
+  }
+  const bossWindingUp=enemy=>enemy.boss&&enemy.skillTimer>=enemy.skillInterval-1.5&&(enemy.bossProfile!=='bastion'||enemy.skillUses<3);
+  function executeBossSkill(enemy) {
+    if(!enemy.alive)return;
+    enemy.el.classList.remove('skill-aiming');
+    if(enemy.bossProfile==='bastion'){
+      if(enemy.skillUses>=3)return;enemy.shield=Math.min(enemy.shieldMax,enemy.shield+enemy.maxHp*.15);positionEnemy(enemy);popDamage(enemy.x,enemy.y-15,'🏰 防壁再装填');
+    } else if(enemy.bossProfile==='swarm'){
+      const owned=state.enemies.filter(e=>e.summonerId===enemy.id).length,count=Math.min(3,6-owned,maxEnemies()-state.enemies.length);
+      for(let i=0;i<count;i++)spawnEnemy({type:'thrall',summonerId:enemy.id,x:Math.min(64,enemy.x+5),y:30+i*20});popDamage(enemy.x,enemy.y-15,'🐝 群体招集');
+    } else {
+      drawLightning(enemy,{x:86,y:48});hurtPlayer(enemyDamage(28*(1+state.world*.12),enemy),{...enemy,direct:true,pierce:.8,debuff:'jam'});
+    }
+    enemy.skillUses++;sound.play('boss',.8);emitBurst(enemy.x,enemy.y,'#ffa3d6',35);
   }
   function nearestEnemies(origin,exclude=null) {
     return state.enemies.filter(e=>e!==exclude).sort((a,b)=>Math.hypot(a.x-origin.x,(a.y-origin.y)*.6)-Math.hypot(b.x-origin.x,(b.y-origin.y)*.6));
@@ -746,10 +817,10 @@
   }
   function damageEnemy(enemy,amount,crit=false,silent=false) {
     if(!enemy?.alive)return;
-    amount=finiteStat(amount)*(1-(enemy.armor||0));
+    amount=finiteStat(finiteStat(amount)*(1-(enemy.armor||0))*(1-enemyLinkEffects(enemy).guard)*(enemy.exposedUntil>state.gameTime?1.35:1));
     const absorbed=Math.min(enemy.shield||0,amount);enemy.shield=Math.max(0,(enemy.shield||0)-absorbed);
     enemy.hp=Math.max(0,enemy.hp-(amount-absorbed));
-    if(absorbed>0&&enemy.shield===0){sound.play('rupture',.8);emitBurst(enemy.x,enemy.y,'#8fefff',55,1.6);shockwave(enemy.x,enemy.y,'#97efff',180);impactWord('SHIELD BREAK',enemy.x,enemy.y-12,'#94efff');}
+    if(absorbed>0&&enemy.shield===0){sound.play('rupture',.8);emitBurst(enemy.x,enemy.y,'#8fefff',55,1.6);shockwave(enemy.x,enemy.y,'#97efff',180);impactWord('SHIELD BREAK',enemy.x,enemy.y-12,'#94efff');if(bossWindingUp(enemy)){enemy.skillTimer=0;enemy.exposedUntil=state.gameTime+3;enemy.el.classList.remove('skill-aiming');popDamage(enemy.x,enemy.y-18,'BREAK！3秒 弱体');}}
     enemy.hitUntil=state.effectTime+.09;enemy.el.classList.add('hit');
     if(!silent)popDamage(enemy.x,enemy.y-4,(absorbed>0?'🛡 ':crit?'💥 ':'')+fmt(amount)+(crit?'!':''),crit);
     if(crit){spawnParticles(enemy.x,enemy.y,5);shakeBattlefield(2.5,.15);impactWord('CRITICAL!',enemy.x,enemy.y-10);impactSlow();}
@@ -1227,12 +1298,14 @@
   function refreshHelp() {}
   function renderGuide() {
     const value=$('guideTopic').value;
-    if(value.startsWith('foe:')){const e=enemyCatalog.find(e=>e.id===value.slice(4));el.helpTooltip.textContent=e.emoji+' '+e.name+'\n'+(e.desc||(e.direct?'1秒の予告後に直撃。防壁100%貫通、軽減・完全ガードで対処。4.8秒ごと、予告中に倒せば阻止。':e.bomber?'超高速で接近、左74%で0.55秒後に自爆。爆発前の撃破で阻止。自爆時は報酬なし。':`遠距離から${e.cooldown}秒ごとに射撃。固定照準で先に倒そう。`+(e.debuff==='slow'?'命中で5秒間APS30%低下。':e.debuff==='poison'?'毒は6秒間継続しHP回復を半減。完全ガードで防止。':e.pierce?'シールド60%貫通。軽減・完全ガードで対処。':'')));}
+    if(value.startsWith('foe:')){const e=enemyCatalog.find(e=>e.id===value.slice(4));el.helpTooltip.textContent=e.emoji+' '+e.name+'\n'+enemyDescription(e)+'\n攻略：'+(enemyHints[e.id]||'接近順に倒す。群れは範囲攻撃で処理。');}
+    else if(value.startsWith('boss:')){const b=bossProfiles.find(b=>b.id===value.slice(5));el.helpTooltip.textContent=b.name+'\n'+b.desc+'\n攻略：'+b.hint;}
     else el.helpTooltip.textContent=helpText({dataset:{help:value}});
   }
   function initializeHelp() {
     const groups=[['操作',[['openMax','📦 MAX開封'],['enemyUpgrade','🔥 敵強化 Lv.999'],['player','🧙 プレイヤー'],['wave','⚔ WAVE'],['pause','Ⅱ 停止・復帰'],['sound','🔊 サウンド'],['reset','↻ 初期化']]],['敵',enemyCatalog.filter(e=>e.id).map(e=>['foe:'+e.id,e.emoji+' '+e.name])],['キャラ',characterPool.map(c=>['character:'+c.id,c.emoji+' '+c.name])],['カード',cardPool.map(c=>['card:'+c.id,c.emoji+' '+c.name])],['シナジー',synergyPool.map(s=>['synergy:'+s.id,s.emoji+' '+s.name])]];
     groups.push(['能力・システム',Object.entries(helpDefinitions).filter(([key])=>!groups[0][1].some(([id])=>id===key)).map(([key,value])=>[key,(typeof value==='function'?value():value).split('\n')[0]])]);
+    groups.push(['ボス',bossProfiles.map(b=>['boss:'+b.id,b.emoji+' '+b.name])]);
     $('guideTopic').innerHTML=groups.map(([label,entries])=>'<optgroup label="'+label+'">'+entries.map(([id,name])=>'<option value="'+id+'">'+name+'</option>').join('')+'</optgroup>').join('');
     $('guideBtn').addEventListener('click',()=>{if(state.modalOpen||state.decisionOpen)return;state.helpOpen=true;renderGuide();$('guideDialog').showModal();renderPauseState();});
     $('guideTopic').addEventListener('change',renderGuide);
@@ -1267,6 +1340,8 @@
     const boss=state.enemies.find(e=>e.boss);
     el.bossShieldStatus.classList.toggle('hidden',!boss);
     if(boss)setText(el.bossShieldStatus,`🛡 ボス防壁 ${fmt(boss.shield)} / ${fmt(boss.shieldMax)} · ${boss.enraged?'再展開済み（残り0回）':'HP40%で再展開（残り1回）'}`);
+    $('bossSkillStatus').classList.toggle('hidden',!boss);
+    if(boss){const profile=bossProfiles.find(b=>b.id===boss.bossProfile),warning=bossWindingUp(boss),exposed=boss.exposedUntil>state.gameTime;setText($('bossSkillStatus'),`${profile.emoji} ${profile.name} · ${exposed?'BREAK 弱体 '+Math.ceil(boss.exposedUntil-state.gameTime)+'秒':boss.bossProfile==='bastion'&&boss.skillUses>=3?'再装填を使い切った':(warning?'⚠ ':'')+profile.skill+'まで '+Math.max(0,boss.skillInterval-boss.skillTimer).toFixed(1)+'秒'}${boss.bossProfile==='bastion'?' / 装填残り'+Math.max(0,3-boss.skillUses)+'回':''}`);$('bossSkillStatus').classList.toggle('urgent',warning);}
     el.bossProgress.style.width=(boss?boss.hp/boss.maxHp*100:((state.wave-1)+Math.min(1,state.waveKills/targetWaveKills()))/5*100)+'%';
     setText(el.progressLabel,boss?'BOSS HP':'STAGE PROGRESS');
     setText(el.sectorText,String(state.world).padStart(2,'0'));setText(el.enemyCount,`HOSTILES ${state.enemies.length} / ${maxEnemies()}`);
@@ -1369,6 +1444,32 @@
     {label:'完全コレクション',goal:'全26種類を入手',done:()=>state.discovered.size===cardPool.length},
   ];
   const progressPosition=()=>Math.min(MAX_RESOURCE,(state.world-1)*25+(state.stage-1)*5+state.wave);
+  const libraryState={tab:'enemies',returnFocus:null};
+  function libraryEntries(tab) {
+    if(tab==='enemies')return enemyCatalog.map(e=>({name:e.emoji+' '+e.name,desc:enemyDescription(e),hint:enemyHints[e.id]||'接近順に倒し、密集した敵には範囲攻撃を使う。',meta:e.summoned?'召喚・分裂専用 / 追加報酬なし':e.linkRole?'連携の中心 / ボス随伴・後半の通常抽選':'敵ユニット / 全種類公開'}));
+    if(tab==='bosses')return bossProfiles.map(b=>({name:b.emoji+' '+b.name,desc:b.desc+' 共通：HP60%分の防壁、HP40%で1回再展開＋激昂。',hint:b.hint,meta:'1.5秒予告 / WORLDとSTAGEに応じ3タイプが順番に登場'}));
+    if(tab==='cards')return cardPool.map(c=>({name:c.emoji+' '+c.name+' / '+c.rarity,desc:c.desc,hint:['armor','barrier','parry','vital','aegis','regen'].includes(c.id)?'防壁・HP・軽減・完全ガードを組み合わせ、貫通や回復妨害にも備える。':['splash','inferno','chain','starfall','void'].includes(c.id)?'召喚雑兵や分裂した敵が密集する場面に有効。':'キャラの長所と組み合わせ、味方シナジー図鑑の解放条件も確認。',meta:state.discovered.has(c.id)?'入手済 ×'+exact(state.cardCounts[c.id]):'未入手 · パックから入手',owned:state.discovered.has(c.id)}));
+    if(tab==='characters')return characterPool.map(c=>({name:c.emoji+' '+c.name,desc:'長所：'+c.merit+'。弱点：'+c.drawback+'。',hint:c.id==='nova'?'群体・召喚・分裂に強い。防壁容量が低いためHPと軽減を補う。':c.id==='ranger'?'中継役を含む射手隊を崩す。被ダメージ増に注意。':c.id==='counter'?'接触や弾幕へ反撃。通常火力が低いため時間制限に注意。':'特殊な弱点がない。カードのシナジーで火力と防御を伸ばす。',meta:state.unlockedCharacters.has(c.id)?'解放済み':'解放費用 '+exact(c.cost)+' GOLD'}));
+    if(tab==='synergies')return synergyPool.map(s=>({name:s.emoji+' '+s.name,desc:s.description,hint:'条件：'+Object.entries(s.requires).map(([id,n])=>byId[id].name+' ×'+n).concat(s.extraLabel?[s.extraLabel]:[]).join(' ＋ '),meta:synergyStatus(s)}));
+    if(tab==='links')return enemyLinkCatalog.map(s=>({name:s.emoji+' '+s.name,desc:s.effect,hint:s.hint,meta:s.condition+' / 範囲38未満・同種は非重複'}));
+    return strategyHints.map(([name,desc])=>({name,desc,hint:'戦闘中の攻略ヒントと敵連携表示も確認しよう。',meta:'攻略ヒント'}));
+  }
+  function renderLibrary() {
+    const query=$('librarySearch').value.trim().toLocaleLowerCase(),entries=libraryEntries(libraryState.tab),shown=entries.filter(e=>(e.name+' '+e.desc+' '+e.hint+' '+e.meta).toLocaleLowerCase().includes(query));
+    for(const button of $('libraryTabs').children)button.setAttribute('aria-pressed',String(button.dataset.libraryTab===libraryState.tab));
+    setText($('libraryCount'),shown.length+' / '+entries.length+'件 · 全種類・未入手も表示');
+    $('libraryList').innerHTML=shown.length?shown.map(e=>`<article class="library-entry${e.owned===false?' unowned':''}"><h3>${e.name}</h3><small>${e.meta}</small><p>${e.desc}</p><p class="strategy-note">💡 ${e.hint}</p></article>`).join(''):'<p class="library-empty">該当する項目はありません。検索語を短くしてみよう。</p>';
+  }
+  function openLibrary(tab='enemies') {
+    if(state.modalOpen||state.decisionOpen||state.helpOpen)return;
+    libraryState.tab=tab;libraryState.returnFocus=document.activeElement;$('librarySearch').value='';state.helpOpen=true;renderLibrary();$('libraryDialog').showModal();renderPauseState();$('librarySearch').focus();
+  }
+  $('libraryBtn').addEventListener('click',()=>openLibrary());
+  for(const button of document.querySelectorAll('[data-library]'))button.addEventListener('click',()=>openLibrary(button.dataset.library));
+  $('librarySearch').addEventListener('input',renderLibrary);
+  $('libraryTabs').addEventListener('click',event=>{const button=event.target.closest('[data-library-tab]');if(button){libraryState.tab=button.dataset.libraryTab;$('librarySearch').value='';renderLibrary();$('libraryList').scrollTop=0;}});
+  $('libraryCloseBtn').addEventListener('click',()=>$('libraryDialog').close());
+  $('libraryDialog').addEventListener('close',()=>{state.helpOpen=false;renderPauseState();if(libraryState.returnFocus?.isConnected)libraryState.returnFocus.focus({preventScroll:true});});
   function positionLabel(n){return n?`WORLD ${Math.floor((n-1)/25)+1}-${Math.floor((n-1)%25/5)+1} / WAVE ${(n-1)%5+1}`:'未出撃';}
   function renderArchive() {
     if(state.ready)state.records[state.character]=Math.max(state.records[state.character]||0,progressPosition());
@@ -1376,8 +1477,6 @@
     if($('achievementList').innerHTML!==achievementHTML)$('achievementList').innerHTML=achievementHTML;
     const recordHTML=characterPool.map(c=>`<span>${c.emoji} ${c.name}<br><b>${positionLabel(state.records[c.id]||0)}</b></span>`).join('');
     if($('characterRecords').innerHTML!==recordHTML)$('characterRecords').innerHTML=recordHTML;
-    setText($('codexCount'),`${state.discovered.size} / ${cardPool.length}`);
-    if($('codexDetails').open){const html=cardPool.map(c=>`<article class="codex-card ${state.discovered.has(c.id)?'owned':'unowned'}" data-help="card:${c.id}" tabindex="0"><b>${c.emoji} ${c.name} · ${c.rarity}</b><p>${c.desc}</p><span>${state.discovered.has(c.id)?'入手済 ×'+exact(state.cardCounts[c.id]):'未入手 · パックから入手'}</span></article>`).join('');if($('codexList').innerHTML!==html)$('codexList').innerHTML=html;}
     $('exportOpenBtn').disabled=!state.lastOpen;
   }
   async function exportImage(kind='build') {
@@ -1396,7 +1495,6 @@
     const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
     if(blob){downloadBlob(blob,`lootmoji-${session.mode}-${session.preset}-${kind}.png`);$('exportStatus').textContent='PNGを保存しました。';}else $('exportStatus').textContent='画像を生成できませんでした。';
   }
-  $('codexDetails').addEventListener('toggle',renderArchive);
   $('exportBuildBtn').addEventListener('click',()=>exportImage('build'));
   $('exportOpenBtn').addEventListener('click',()=>exportImage('open'));
   function renderResultInventory(result=state.lastOpen) {
@@ -1566,9 +1664,9 @@
     const main=Object.keys(totals).sort((a,b)=>totals[b]-totals[a])[0];
     return `直近：${damageTips[latest.kind][0]} · HP −${fmtDecimal(latest.hp)} / 防壁 −${fmtDecimal(latest.shield)}${latest.blocked?' / 完全ガード':''}。主なHP損失：${damageTips[main][0]}。${damageTips[main][1]}`;
   }
-  const isUrgent=e=>e.alive&&(e.bomber&&e.x>=55||e.berserk&&e.enraged&&e.x>=55||(e.direct||e.support||e.sniper)&&e.x>=e.stopX&&e.shotTimer>=e.cooldown-(e.direct||e.sniper?1.5:1));
-  const threatScore=e=>(isUrgent(e)?100:0)+(e.direct?30:e.bomber?25:e.sniper?29:e.support==='shield'?27:e.support==='haste'?26:e.support==='heal'?24:e.support==='summon'?23:e.shieldDrain?22:e.debuff?20:e.pierce?18:e.ranged?12:0)+e.x/100;
-  const threatLabel=e=>e.direct?'🥷 直撃予告':e.bomber?'💣 自爆接近':e.support==='heal'?'🪷 回復予告':e.support==='summon'?'🪦 召喚予告':e.support==='shield'?'🗿 防壁予告':e.support==='haste'?'🥁 加速予告':e.sniper?'🎯 狙撃予告':'🐗 激昂突進';
+  const isUrgent=e=>e.alive&&(bossWindingUp(e)||e.bomber&&e.x>=55||e.berserk&&e.enraged&&e.x>=55||(e.direct||e.support&&e.support!=='anchor'||e.sniper)&&e.x>=e.stopX&&e.shotTimer>=e.cooldown-(e.direct||e.sniper?1.5:1));
+  const threatScore=e=>(isUrgent(e)?100:0)+(e.linkRole?33:e.direct?30:e.bomber?25:e.sniper?29:e.support==='shield'?27:e.support==='haste'?26:e.support==='heal'?24:e.support==='summon'?23:e.shieldDrain?22:e.debuff?20:e.pierce?18:e.ranged?12:0)+e.x/100;
+  const threatLabel=e=>e.boss?'👑 '+bossProfiles.find(b=>b.id===e.bossProfile).skill:e.direct?'🥷 直撃予告':e.bomber?'💣 自爆接近':e.support==='heal'?'🪷 回復予告':e.support==='summon'||e.support==='brood'?'🐝 召喚予告':e.support==='shield'?'🗿 防壁予告':e.support==='haste'?'🥁 加速予告':e.sniper?'🎯 狙撃予告':'🐗 激昂突進';
   function prepareBattle(message='準備中は敵も制限時間も止まっています。') {
     state.ready=false;$('readyMessage').textContent=message;renderPauseState();renderUI();
   }
@@ -1603,6 +1701,10 @@
     const locked=state.enemies.find(e=>e.id===state.targetId),urgent=state.enemies.filter(isUrgent);
     setText($('targetStatus'),locked?`⌖ 固定：${locked.emoji} ${locked.name}`:'照準：自動');
     setText($('threatAlert'),urgent.length?`⚠ ${urgent.map(threatLabel).join(' / ')} · 対象を選んで撃破！${settings.autoSlow?'（戦闘速度 ×0.5）':''}`:'予告監視中 · 回復役・召喚役も固定照準で先に撃破');
+    const links=activeEnemyLinks(),uniqueLinks=[...new Map(links.map(l=>[l.role,l])).values()],boss=state.enemies.find(e=>e.boss);
+    $('enemyLinksText').classList.toggle('hidden',!links.length);setText($('enemyLinksText'),'敵連携：'+uniqueLinks.map(l=>l.info.emoji+' '+l.info.name).join(' / '));
+    for(const enemy of state.enemies)enemy.el.classList.toggle('link-active',links.some(l=>l.source===enemy));
+    setText($('battleHint'),'💡 '+(boss&&bossWindingUp(boss)?'特殊行動の予告中！ボスの防壁を割ると中断＋3秒弱体。':uniqueLinks.length?uniqueLinks[0].info.hint:boss?bossProfiles.find(p=>p.id===boss.bossProfile).hint:isJammed()?'防壁回復が停止中。ジャマーを先に倒し、HPと軽減で耐えよう。':'厄介な支援役を固定照準。敵とボスの対策は「図鑑」から。'));
     const choices=$('targetChoices');
     for(const button of [...choices.children])if(!state.enemies.some(e=>String(e.id)===button.dataset.targetId))button.remove();
     for(const enemy of state.enemies) {
@@ -1689,6 +1791,7 @@
     resetGame,step,renderUI,openPacks,closeModal,finishPackAnimation,removeEnemy,killEnemy,hurtPlayer,
     characterPool,selectCharacter,upgradeEnemies,enemyModifiers,enemyUpgradeCost,shieldCapacity,attack,
     upgradeQuote,rescaleEnemies,MAX_ENEMY_LEVEL,isJammed,fireEnemyProjectile,helpText,enemyDamage,applyDebuff,updateDebuffs,clearDebuffs,checkWaveDeadline,directStrike,detonateEnemy,castEnemySupport,enemyCatalog,
+    activeEnemyLinks,enemyLinkEffects,enemyLinkCatalog,bossProfiles,bossWindingUp,executeBossSkill,libraryEntries,openLibrary,renderLibrary,
     showPackAnimation,updatePackAnimation,
     session,saveProgress,captureProgress,validateSave,validProgress,saveEnvelope,restoreProgress,switchSlot,giveDemoPacks,prepareBattle,startBattle,compareCharacters,characterPreview,renderResultInventory,renderArchive,exportImage,isUrgent,targetWaveKills,damageSummary,
     fireBossVolley,sound,settings,juiceParticles,juiceLimit,juiceStats,emitBurst,shockwave,updateJuice,

@@ -25,7 +25,7 @@
       </section>
     <div class="quick-pack-bar">
       <div class="quick-copy"><span class="eyebrow">OPEN. CRUSH. REPEAT.</span><b>開けろ。強くなれ。</b></div>
-      <button id="openMaxBtn" class="quick-open-btn" data-help="openMax"><span>📦 MAX開封</span><b id="openMaxCount">128 PACKS →</b></button><nav class="arcade-nav" aria-label="ゲーム内移動"><button data-jump="battlePanel">⚔ 戦闘</button><button data-jump="commandPanel">🔥 強化</button><button data-jump="buildPanel">🃏 ビルド</button><button id="guideBtn" aria-haspopup="dialog">？ガイド</button></nav>
+      <button id="openMaxBtn" class="quick-open-btn" data-help="openMax"><span>📦 MAX開封</span><b id="openMaxCount">128 PACKS →</b></button><nav class="arcade-nav" aria-label="ゲーム内移動"><button data-jump="battlePanel">⚔ 戦闘</button><button data-jump="commandPanel">🔥 強化</button><button data-jump="buildPanel">🃏 ビルド</button><button id="libraryBtn" aria-haspopup="dialog">図鑑</button><button id="guideBtn" aria-haspopup="dialog">？ガイド</button></nav>
     </div>
         <section id="packPanel" class="pack-card panel-card" aria-labelledby="packHeading">
           <div class="panel-head"><div><div class="eyebrow">MORE PACKS. MORE POWER.</div><h2 id="packHeading">パックを開ける <span class="label">PACK LAB</span></h2><p>カードは即反映。MAXでまとめて強化。</p></div><div class="pack-big"><span>📦 AVAILABLE</span><b id="packBigText">128</b></div></div>
@@ -57,11 +57,11 @@
           <div class="battle-actions"><button id="pauseBtn" class="tiny-btn" aria-label="戦闘を一時停止" aria-pressed="false">Ⅱ PAUSE</button><button id="speedBtn" class="tiny-btn" aria-label="戦闘速度を変更">⏩ ×1</button></div>
         </div>
         <div class="battle-options"><span class="hard-badge" data-help="difficulty" tabindex="0">⚔ HARD PRESSURE <small>敵軍、強化中。</small></span><div class="av-controls"><button id="soundBtn" class="tiny-btn" aria-pressed="true" data-help="sound">🔊 SE ON</button><label class="volume-control" data-help="sound">音量 <input id="volumeSlider" type="range" min="0" max="100" value="35" aria-label="SE音量"><output id="volumeValue" for="volumeSlider">35%</output></label><button id="fxBtn" class="tiny-btn" data-help="effects" aria-pressed="true">✦ FX MAX</button></div></div>
+        <div class="boss-readout"><p id="bossSkillStatus" class="boss-skill-status hidden" role="status"></p><div id="bossShieldStatus" class="boss-shield-status hidden" data-help="bossShield" tabindex="0"></div></div>
         <div id="battlefield" class="battlefield">
           <div class="lane-grid"></div><div class="danger-wash"></div><div class="frontline"></div>
           <div class="field-caption">SECTOR <span id="sectorText">01</span> <span class="caption-sep">/</span> HOLD THE LINE</div>
           <div id="buffList" class="buff-list"></div>
-          <div id="bossShieldStatus" class="boss-shield-status hidden" data-help="bossShield" tabindex="0"></div>
           <div id="directWarning" class="direct-warning hidden" aria-hidden="true"><span>⌖ LOCK ON</span></div>
           <div id="dangerLabel" class="danger-label">⚠ DANGER</div>
           <div id="killChain" class="kill-chain"></div>
@@ -83,6 +83,7 @@
         <div class="control-row"><b id="waveGoal">突破条件</b><span id="targetStatus">照準：自動</span><b id="combatVitals" class="combat-vitals"></b></div>
         <div class="control-row"><label>優先対象 <select id="targetPolicy"><option value="standard">標準（接近順）</option><option value="danger">危険敵を優先</option><option value="boss">ボスを優先</option></select></label><button id="clearTargetBtn" class="ghost-btn">固定解除 [X]</button><label><input id="autoSlow" type="checkbox" checked> 危険時に自動減速</label></div>
         <p id="threatAlert" class="threat-alert" role="status">危険な予告はここに表示します。</p>
+        <p id="enemyLinksText" class="enemy-links hidden" role="status"></p><p id="battleHint" class="battle-hint"></p>
         <details class="tactical-details"><summary>照準リスト・被弾ログ</summary><div id="targetChoices" class="target-choices" aria-label="敵への固定照準"></div>
         <p id="damageReport" class="damage-report" role="status">被ダメージ履歴はまだありません。</p>
         </details><details><summary>操作と表示設定</summary><p>敵をクリック・タップ、またはTab→Enterで照準固定＋追撃。P：停止／再開、M：MAX開封、X：固定解除。入力欄ではショートカット無効。</p><div class="control-row"><label>文字サイズ <select id="fontScale"><option value="normal">標準</option><option value="large">大きめ</option></select></label><span>説明は上の「？ガイド」から。通常の操作では説明を表示しません。</span></div></details>
@@ -110,7 +111,7 @@
       <details class="collection-fold"><summary>🏆 図鑑・記録・画像保存</summary><section class="panel-card experience-panel" aria-labelledby="archiveHeading">
         <h2 id="archiveHeading">図鑑・記録・次の目標</h2><p>この体験／遊び方の枠ごとに保存。キャラ別記録は「そのキャラで出撃した最高到達WAVE」です。</p>
         <div id="achievementList" class="achievement-list"></div><div id="characterRecords" class="control-row"></div>
-        <details id="codexDetails"><summary>カード図鑑（未入手も表示） <span id="codexCount"></span></summary><div id="codexList" class="codex-list"></div></details>
+        <div class="library-shortcuts"><button class="ghost-btn" data-library="enemies">敵図鑑</button><button class="ghost-btn" data-library="bosses">ボス図鑑</button><button class="ghost-btn" data-library="cards">カード図鑑</button><button class="ghost-btn" data-library="characters">キャラ図鑑</button><button class="ghost-btn" data-library="synergies">味方シナジー</button><button class="ghost-btn" data-library="links">敵連携図鑑</button><button class="ghost-btn" data-library="tips">攻略ヒント</button></div>
         <div class="control-row"><button id="exportBuildBtn" class="buy-btn">ビルドを画像保存</button><button id="exportOpenBtn" class="ghost-btn">直近の開封結果を画像保存</button><span id="exportStatus" role="status"></span></div>
       </section>
       </details>
@@ -134,6 +135,7 @@
     </div>
   </div>
   <dialog id="guideDialog" class="guide-dialog" aria-labelledby="guideTitle"><div class="guide-head"><h2 id="guideTitle">？ゲームガイド</h2><button id="guideCloseBtn" class="buy-btn">閉じる ✕</button></div><p>知りたい項目だけ選ぼう。ガイド中は戦闘・復帰カウント停止。</p><label for="guideTopic">調べる項目</label><select id="guideTopic"></select><div id="helpTooltip" class="guide-content" role="status"></div></dialog>
+  <dialog id="libraryDialog" class="library-dialog" aria-labelledby="libraryTitle"><div class="guide-head"><h2 id="libraryTitle">図鑑 ＆ 攻略ノート</h2><button id="libraryCloseBtn" class="buy-btn">閉じる ✕</button></div><p class="library-intro">調べて、組み合わせを崩せ。閲覧中は戦闘・復帰カウント停止。</p><div id="libraryTabs" class="library-tabs" role="group" aria-label="図鑑の種類"><button data-library-tab="enemies" aria-pressed="true">敵</button><button data-library-tab="bosses" aria-pressed="false">ボス</button><button data-library-tab="cards" aria-pressed="false">カード</button><button data-library-tab="characters" aria-pressed="false">キャラ</button><button data-library-tab="synergies" aria-pressed="false">味方シナジー</button><button data-library-tab="links" aria-pressed="false">敵連携</button><button data-library-tab="tips" aria-pressed="false">攻略</button></div><label for="librarySearch">名前・能力・対策を検索</label><input id="librarySearch" type="search" placeholder="例：防壁、召喚、NOVA" autocomplete="off"><p id="libraryCount" role="status"></p><div id="libraryList" class="library-list"></div></dialog>
   <dialog id="decisionDialog" aria-labelledby="decisionTitle"><h2 id="decisionTitle"></h2><p id="decisionBody"></p><div class="control-row"><button id="cancelDecision" class="ghost-btn">キャンセル</button><button id="confirmDecision" class="buy-btn">実行する</button></div></dialog>
   <script src="script.js"></script>
 </body>
