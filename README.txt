@@ -1,4 +1,4 @@
-LOOTMOJI — OVERLOAD / Demo v2
+るともじ / Demo v2
 
 起動
   lootmoji_demo_v2 フォルダ内の index.html をブラウザで開いてください。

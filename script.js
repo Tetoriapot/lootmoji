@@ -1484,7 +1484,7 @@
     const canvas=document.createElement('canvas');canvas.width=1200;canvas.height=opening?1850:2050;
     const ctx=canvas.getContext('2d');ctx.fillStyle='#111625';ctx.fillRect(0,0,canvas.width,canvas.height);
     let y=90;const line=(text,size=28,color='#e5eafa')=>{ctx.font=`${size}px "Yu Gothic",sans-serif`;ctx.fillStyle=color;ctx.fillText(text,60,y,1080);y+=size+20;};
-    line('LOOTMOJI / OVERLOAD',48,'#d6ff73');
+    line('るともじ',48,'#d6ff73');
     line(`${session.guest?'ゲスト / ':''}${session.mode==='demo'?'DEMO体験（補給あり）':'通常プレイ'} / ${presets[session.preset].name}`,30,'#ffdaa9');
     line(opening?'今回の開封結果':'現在のビルド',38);line(`${positionLabel(progressPosition())} / ${currentCharacter().name}`);
     const result=state.lastOpen,stats=snapshotStats();
@@ -1493,7 +1493,7 @@
     for(const c of [...cardPool].sort((a,b)=>rarityRank[b.rarity]-rarityRank[a.rarity]))line(`${c.rarity.padEnd(6)} ${c.name}   ×${exact(opening?result.cardCounts.get(c.id)||0:state.cardCounts[c.id]||0)}${opening&&result.newIds.includes(c.id)?' NEW':''}`,25,state.discovered.has(c.id)?'#e5eafa':'#9ca9c1');
     line('ローカル保存 / 外部送信なし',24,'#a2b1ce');
     const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
-    if(blob){downloadBlob(blob,`lootmoji-${session.mode}-${session.preset}-${kind}.png`);$('exportStatus').textContent='PNGを保存しました。';}else $('exportStatus').textContent='画像を生成できませんでした。';
+    if(blob){downloadBlob(blob,`るともじ-${session.mode}-${session.preset}-${kind}.png`);$('exportStatus').textContent='PNGを保存しました。';}else $('exportStatus').textContent='画像を生成できませんでした。';
   }
   $('exportBuildBtn').addEventListener('click',()=>exportImage('build'));
   $('exportOpenBtn').addEventListener('click',()=>exportImage('open'));
@@ -1631,7 +1631,7 @@
     renderUI();
   });
   $('animationPolicy').addEventListener('change',event=>{settings.animationPolicy=event.target.value;saveProgress();});
-  $('backupBtn').addEventListener('click',()=>{session.slots[slotKey()]=captureProgress();downloadBlob(new Blob([JSON.stringify(saveEnvelope(),null,2)],{type:'application/json'}),'lootmoji-backup.json');});
+  $('backupBtn').addEventListener('click',()=>{session.slots[slotKey()]=captureProgress();downloadBlob(new Blob([JSON.stringify(saveEnvelope(),null,2)],{type:'application/json'}),'るともじ-backup.json');});
   $('restoreFile').addEventListener('change',async event=>{
     const file=event.target.files[0];event.target.value='';if(!file)return;
     try {if(file.size>2000000)throw Error('2MB以下のバックアップを指定してください');const data=validateSave(JSON.parse(await file.text()));
