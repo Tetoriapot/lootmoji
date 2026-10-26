@@ -24,8 +24,8 @@
   const rarityLabels = ['N', 'R', 'SR', 'SSR', 'UR', 'SECRET'];
   const rarityRank = Object.fromEntries(rarityLabels.map((r, i) => [r, i]));
   const rarityRates = [['SECRET', .00001], ['UR', .001], ['SSR', .015], ['SR', .08], ['R', .25], ['N', .65399]];
-  const settings = { pauseDuringPacks: true, fxIntensity:'max', autoSlow:true, targetPolicy:'standard', fontScale:'normal', animationPolicy:'luxury',fxFlash:true,fxShake:true,fxParticles:true,fxNumbers:true,speed:1,amount:1,rareOnly:false,newOnly:false };
-  const session={mode:'normal',preset:'standard',guest:false,slots:{},saveStatus:'',lastSave:0,records:{},storageReady:false};
+  const settings = { pauseDuringPacks: true, fxIntensity:'max', autoSlow:true, targetPolicy:'standard', targetSort:'standard', fontScale:'normal', animationPolicy:'luxury',fxFlash:true,fxShake:true,fxParticles:true,fxNumbers:true,speed:1,amount:1,rareOnly:false,newOnly:false };
+  const session={mode:'normal',preset:'standard',guest:false,slots:{},saveStatus:'',lastSave:0,records:{},storageReady:false,storageError:'',restoreError:'',sourceEnvelope:{}};
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   function initialState() {
     return {
@@ -48,8 +48,8 @@
       toastQueue: [], toastUntil: 0, bannerUntil: 0, hurtUntil: 0, shakeUntil: 0, lastShake: -1,
       supplyUntil: 0, danger: 0, buildDirty: true, synergySignature: '', clickAt: -1,
       ready:true, decisionOpen:false, helpOpen:false, targetId:null, damageHistory:[], lastDefeat:'',
-      respawnRemaining:0,
-      unlockedEnemyLevel:0,pendingEnemyLevel:null,earnedGold:0,earnedPacks:0,combatSeconds:0,records:{},bossesDefeated:0,
+      respawnRemaining:0,pinnedGoal:null,progressExtras:{},
+      unlockedEnemyLevel:0,pendingEnemyLevel:null,earnedGold:0,earnedPacks:0,combatSeconds:0,economyStartGold:250,economyStartPacks:128,records:{},bossesDefeated:0,
     };
   }
   const state = initialState();
@@ -291,6 +291,13 @@
       armor:1-(1-state.armor)*(1-character.guard),shieldMax:shieldCapacity(),
       regen:(Math.max(.4,state.maxHp*.002)+state.maxHp*state.regen)*(isPoisoned()?.5:1),blockChance:state.blockChance};
   }
+  function synergyRequirements(s) {
+    const parts=Object.entries(s.requires).map(([id,required])=>({label:byId[id].name,owned:state.cardCounts[id]||0,required}));
+    const extras={packAddict:['累計開封',state.totalOpened,1000],kingsTax:['所持コイン',state.gold,10000],trashKing:['Nカード累計',state.normalCards,1000],jackpot:['一度の開封でUR以上',state.bestRareBatch,10]};
+    if(extras[s.id]){const [label,owned,required]=extras[s.id];parts.push({label,owned,required});}
+    return parts;
+  }
+  function requirementText(s) {return synergyRequirements(s).map(p=>p.label+' '+exact(p.owned)+' / '+exact(p.required)+'（不足 '+exact(Math.max(0,p.required-p.owned))+'）').join(' ／ ');}
   function synergyProgress(s) {
     const parts=Object.entries(s.requires).map(([id,n])=>Math.min(1,(state.cardCounts[id]||0)/n));
     if(s.extra) parts.push(clamp(s.extra(),0,1));
@@ -1039,7 +1046,8 @@
     openModal();el.modalCard.className='modal-card opening'+(result.massive?' massive':'');
     el.modalTitle.textContent=exact(result.amount)+(result.amount===1?' PACK':' PACKS');
     el.modalKicker.textContent=result.amount>=1e6?'MILLION / OVERLOAD':result.massive?'MAX / OVERLOAD':result.amount>=10000?'PACK STORM':'PACK OPEN';
-    el.modalSubtitle.textContent='OPENING… 箱の向こうに、新しいビルド。';
+    el.modalSubtitle.textContent='開封中… 結果を集計しています。';
+    $('openingSummary').textContent='開封後の能力と獲得内容を表示します。';
     el.modalSummary.innerHTML=summaryHTML(result,true);el.rareDrops.innerHTML='';el.rareReveal.textContent='';
     el.statChanges.innerHTML='';el.unlockedSynergies.innerHTML='';el.cardRows.innerHTML='';el.cardDetails.open=false;
     el.skipBtn.classList.remove('hidden');el.closeModalBtn.textContent='SKIP →';el.skipBtn.focus();hideHelp();
@@ -1063,7 +1071,7 @@
     const card=opening.featured;
     el.packStage.dataset.rarity=card?.rarity||'N';
     setText(el.packHeroRarity,card?card.rarity+(card.isNew?' / NEW':''):'COLLECTED');
-    setText(el.packBurst,card?.emoji||'✨');setText(el.packHeroName,card?.name||'BUILD UPGRADED');
+    setText(el.packBurst,card?.emoji||'✨');setText(el.packHeroName,card?.name||'カード効果を反映');
     setText(el.packHeroCount,card?'×'+exact(card.count):'カード効果をすべて反映');
     el.packStage.classList.add('hero-revealed');
   }
@@ -1100,14 +1108,19 @@
     }
     if(progress>=1)finishPackAnimation();
   }
+  const resultStatFields=[['damage','⚔ 攻撃力',fmt],['aps','⚡ 攻撃回数/秒',n=>n.toFixed(1)],['crit','💥 会心率',n=>Math.round(n*100)+'%'],['packChance','🍀 パック率',n=>Math.round(n*100)+'%'],['splash','💣 範囲攻撃',n=>Math.round(n*100)+'%'],['maxHp','❤️ 最大HP',fmt],['armor','🛡 軽減率',n=>Math.round(n*100)+'%'],['shieldMax','🔷 防壁上限',fmt],['regen','🌿 回復量',n=>fmtDecimal(n)+'/秒'],['blockChance','🤺 完全ガード率',n=>Math.round(n*100)+'%']];
+  function openingSummary(result) {
+    const changes=resultStatFields.filter(([key])=>result.after[key]!==result.before[key]).sort(([a],[b])=>(result.after[b]-result.before[b])/Math.max(1,result.before[b])-(result.after[a]-result.before[a])/Math.max(1,result.before[a])).slice(0,3).map(([key,label,format])=>label+' '+format(result.before[key])+' → '+format(result.after[key]));
+    const names=result.unlocked.map(id=>synergyPool.find(s=>s.id===id).name);
+    return '主な能力変化：'+(changes.join(' ／ ')||'主要10項目の変化なし。カード効果は全内訳で確認できます。')+'\n新規カード '+result.newIds.length+'種類 ／ 新規シナジー '+(names.length?names.slice(0,3).join('・')+(names.length>3?' ほか'+(names.length-3)+'件':''):'なし');
+  }
   function renderStatChanges(result) {
-    const percent=n=>Math.round(n*100)+'%';
-    const fields=[['damage','⚔ DAMAGE',fmt],['aps','⚡ APS',n=>n.toFixed(1)],['crit','💥 CRIT',percent],['packChance','🍀 PACK',percent],['splash','💣 SPLASH',percent],['maxHp','❤️ MAX HP',fmt],['armor','🛡 GUARD',percent],['shieldMax','🔷 SHIELD MAX',fmt],['regen','🌿 REGEN',n=>fmtDecimal(n)+'/s'],['blockChance','🤺 BLOCK',percent]];
+    const fields=resultStatFields;
     el.statChanges.innerHTML=fields.map(([key,label,format])=>{
       const before=result.before[key],after=result.after[key],gain=before>0?(after/before-1)*100:0;
       const huge=gain>=99.5;
       const delta=['crit','packChance','splash','armor','blockChance'].includes(key)?`${after>=before?'+':''}${((after-before)*100).toFixed(1)}pt`:before?`${gain>=0?'+':''}${gain>=1000?fmt(gain):gain.toFixed(0)}%`:('+'+format(after-before));
-      return `<div class="stat-change${huge?' huge':''}" data-help="${key}" tabindex="0"><span>${label}</span><b><em>${format(before)}</em> → ${format(after)}</b><small>${delta}${huge?' · HUGE BOOST!':''}</small></div>`;
+      return `<div class="stat-change${huge?' huge':''}" data-help="${key}" tabindex="0"><span>${label}</span><b><em>${format(before)}</em> → ${format(after)}</b><small>${delta}${huge?' · 大幅増加':''}</small></div>`;
     }).join('');
   }
   function renderResultCards(result) {
@@ -1123,6 +1136,7 @@
     renderResultInventory(result);
   }
   function renderPackDetails(result) {
+    setText($('openingSummary'),openingSummary(result));
     el.modalSummary.innerHTML=summaryHTML(result);renderResultCards(result);renderStatChanges(result);
     const ids=result.triggered;
     el.unlockedSynergies.innerHTML=ids.map(id=>{
@@ -1132,21 +1146,21 @@
   function finishPackAnimation() {
     if(!state.opening)return;
     const opening=state.opening,result=opening.result,revealed=opening.revealed;
-    revealPackHero(opening);el.packStage.dataset.phase='complete';el.packChargeBar.style.width='100%';setText(el.packPhaseLabel,'OPEN COMPLETE');
+    revealPackHero(opening);el.packStage.dataset.phase='complete';el.packChargeBar.style.width='100%';setText(el.packPhaseLabel,'開封完了');
     state.opening=null;
     if(result.counts.SECRET&&!revealed.has('SECRET')){sound.stopAll();sound.play('secret');}
     else if(result.counts.UR&&!revealed.has('UR'))sound.play('rare');
     else if(!revealed.size)sound.play('loot');
-    el.modalCard.classList.remove('opening');el.modalKicker.textContent='OPEN COMPLETE';
+    el.modalCard.classList.remove('opening');el.modalKicker.textContent='開封完了';
     el.skipBtn.classList.add('hidden');el.closeModalBtn.textContent='戦闘へ戻る →';
-    el.rareReveal.textContent=result.counts.SECRET?`🌈 SECRET ×${exact(result.counts.SECRET)} !!!`:result.counts.UR?`👑 UR ×${exact(result.counts.UR)}`:'BUILD UPGRADED';
+    el.rareReveal.textContent=result.counts.SECRET?`🌈 SECRET ×${exact(result.counts.SECRET)} !!!`:result.counts.UR?`👑 UR ×${exact(result.counts.UR)}`:'カード効果を反映';
     renderPackDetails(result);el.closeModalBtn.focus({preventScroll:true});hideHelp();
   }
   function showPackDetails() {
     if(!state.lastOpen||state.modalOpen)return;
     const result=state.lastOpen;openModal();el.modalCard.className='modal-card';
     el.packStage.classList.add('hidden');el.packConfetti.replaceChildren();
-    el.modalTitle.textContent=exact(result.amount)+' PACKS';el.modalKicker.textContent='LAST OPEN / DETAILS';
+    el.modalTitle.textContent=exact(result.amount)+' PACKS';el.modalKicker.textContent='直近の開封結果';
     el.rareReveal.textContent='直近の開封結果';el.skipBtn.classList.add('hidden');el.closeModalBtn.textContent='戦闘へ戻る →';
     renderPackDetails(result);el.cardDetails.open=true;el.closeModalBtn.focus({preventScroll:true});hideHelp();
   }
@@ -1168,7 +1182,7 @@
     el.playerCard.dataset.character=character.id;
     // Keep purchase buttons stable while GOLD changes, so focus/hover and clicks are not lost.
     if(!el.characterList.children.length) {
-      el.characterList.innerHTML=characterPool.map(c=>`<article class="character-item" data-character="${c.id}" data-help="character:${c.id}" tabindex="0"><span class="character-emoji">${c.emoji}</span><span class="character-role">${c.role}</span><b>${c.name}</b><p class="character-merit">＋ ${c.merit}</p><p class="character-drawback">− ${c.drawback}</p><button data-select-character="${c.id}" class="buy-btn" data-help="character:${c.id}"></button></article>`).join('');
+      el.characterList.innerHTML=characterPool.map(c=>`<article class="character-item" data-character="${c.id}" data-help="character:${c.id}" tabindex="0"><span class="character-emoji">${c.emoji}</span><span class="character-role">${c.role}</span><b>${c.name}</b><p class="character-merit">＋ ${c.merit}</p><p class="character-drawback">− ${c.drawback}</p><button data-select-character="${c.id}" class="buy-btn" data-help="character:${c.id}" aria-describedby="characterStatus-${c.id}"></button><small id="characterStatus-${c.id}" class="purchase-reason"></small></article>`).join('');
     }
     for(const item of el.characterList.children) {
       const c=characterPool.find(c=>c.id===item.dataset.character),button=item.querySelector('button');
@@ -1176,6 +1190,7 @@
       item.classList.toggle('selected',selected);item.classList.toggle('locked',!unlocked);
       setText(button,selected?'使用中':unlocked?'交代する':`🪙 ${fmt(c.cost)} 解放`);
       button.disabled=selected||(!unlocked&&state.gold<c.cost);button.setAttribute('aria-pressed',String(selected));
+      setText($('characterStatus-'+c.id),selected?'使用中':unlocked?'交代は無料':state.gold<c.cost?'あと '+exact(c.cost-state.gold)+' コイン必要':'解放できます');
     }
     const unlocked=Math.max(state.enemyLevel,state.unlockedEnemyLevel),modifiers=enemyModifiers(),next=enemyModifiers(Math.min(MAX_ENEMY_LEVEL,unlocked+1)),signature=state.enemyLevel+':'+unlocked;
     if(state.commandSignature!==signature) {
@@ -1185,19 +1200,23 @@
     }
     setText(el.upgradeEnemyBtn,unlocked>=MAX_ENEMY_LEVEL?'Lv.999 到達！':`🪙 ${fmt(enemyUpgradeCost())} — Lv.${unlocked+1} 解放`);
     el.upgradeEnemyBtn.disabled=unlocked>=MAX_ENEMY_LEVEL||state.gold<enemyUpgradeCost();
+    setText($('upgradeStatus'),unlocked>=MAX_ENEMY_LEVEL?'上限Lv.999まで解放済み':state.gold<enemyUpgradeCost()?'次の解放まであと '+exact(enemyUpgradeCost()-state.gold)+' コイン':'購入すると現在の敵も強化されます');
     for(const [id,amount] of [['upgradeTenBtn',10],['upgradeMaxBtn','max']]){const q=upgradeQuote(amount);$(id).disabled=!q.count;setText($(id),q.count?'+ '+q.count+' Lv · '+fmt(q.cost)+' GOLD':amount==='max'?'MAX強化':'＋10 Lv');}
     if($('enemyLevelChoice').options.length!==unlocked+1)$('enemyLevelChoice').innerHTML=Array.from({length:unlocked+1},(_,i)=>`<option value="${i}">Lv.${i}</option>`).join('');
     $('enemyLevelChoice').value=state.pendingEnemyLevel??state.enemyLevel;
+    $('enemyLevelInput').max=unlocked;
+    if(document.activeElement!==$('enemyLevelInput'))$('enemyLevelInput').value=state.pendingEnemyLevel??state.enemyLevel;
+    if(!$('enemyLevelStatus').classList.contains('is-error'))setText($('enemyLevelStatus'),state.pendingEnemyLevel!==null?'予約：Lv.'+state.pendingEnemyLevel+'（次WAVEで反映） / 現在Lv.'+state.enemyLevel:'予約なし / 現在Lv.'+state.enemyLevel+' / 入力範囲0〜'+unlocked);
     const stats=snapshotStats(),dps=Math.max(.001,stats.damage*stats.aps*(1+state.crit*(state.critMult-1))*(state.character==='nova'?2.2:1));
     const hp=finiteStat(34*worldScale()*modifiers.hp),seconds=hp/dps;
-    setText($('economyReport'),`射手1体の目安：HP ${fmt(hp)} / 通常攻撃のみ約 ${fmtDecimal(seconds)}秒。次の解放Lvでは約 ${fmtDecimal(seconds*next.hp/modifiers.hp)}秒。Lv.30まではHP×3、以降はHP×1.16／ATK×1.04／GOLD×1.012／PACK×1.008。収益/秒が増えるとは限りません。実測 ${state.combatSeconds.toFixed(1)}秒：${fmtDecimal(state.earnedGold/Math.max(1,state.combatSeconds))} GOLD/s、${fmtDecimal(state.earnedPacks/Math.max(1,state.combatSeconds))} PACK/s（撃破報酬・ゲーム内時間、消費は控除前）。${state.pendingEnemyLevel!==null?'次WAVEからLv.'+state.pendingEnemyLevel:'Lv変更時に実測をリセット'}`);
+    setText($('economyReport'),`射手1体の概算（カード追加発動・敵の防御を含まない）：HP ${fmt(hp)} / 通常攻撃のみ約 ${fmtDecimal(seconds)}秒。次の解放Lvでは約 ${fmtDecimal(seconds*next.hp/modifiers.hp)}秒。Lv.30まではHP×3、以降はHP×1.16／ATK×1.04／GOLD×1.012／PACK×1.008。収益/秒が増えるとは限りません。実測 ${state.combatSeconds.toFixed(1)}秒：${fmtDecimal(state.earnedGold/Math.max(1,state.combatSeconds))} GOLD/s、${fmtDecimal(state.earnedPacks/Math.max(1,state.combatSeconds))} PACK/s（撃破報酬・ゲーム内時間、消費は控除前）。計測開始からの残高差：コイン ${exact(state.gold-state.economyStartGold)} / パック ${exact(state.packs-state.economyStartPacks)}（購入・開封・税などの増減を含む）。${state.pendingEnemyLevel!==null?'次WAVEからLv.'+state.pendingEnemyLevel:'Lv変更・再開時に計測をリセット。直前のLv解放費は残高差に含めません。'}`);
     if($('characterCompare').closest('details').open)renderCharacterComparison();
   }
   function renderBuilds() {
     if(!state.buildDirty)return;
     state.buildDirty=false;
     const cards=cardPool.filter(c=>state.cardCounts[c.id]).sort((a,b)=>rarityRank[b.rarity]-rarityRank[a.rarity]);
-    el.buildList.innerHTML=cards.length?cards.map(c=>`<div class="build-item rarity-${c.rarity}" data-help="card:${c.id}" tabindex="0"><div class="build-icon">${c.emoji}</div><div><b>${c.name} <small>${c.rarity} · ${c.desc}</small></b></div><div class="build-count">×${fmt(state.cardCounts[c.id])}</div></div>`).join(''):'<div class="empty-state"><p>パックを開封してビルドを育てよう。<br>カードの組み合わせで、シナジーを解放。</p></div>';
+    el.buildList.innerHTML=cards.length?cards.map(c=>`<button type="button" class="build-item rarity-${c.rarity}" data-help="card:${c.id}" aria-label="${c.name}の説明を開く"><div class="build-icon">${c.emoji}</div><div><b>${c.name} <small>${c.rarity} · ${c.desc}</small></b></div><div class="build-count">×${fmt(state.cardCounts[c.id])}</div></button>`).join(''):'<div class="empty-state"><p>パックを開封してビルドを育てよう。<br>カードの組み合わせで、シナジーを解放。</p></div>';
     setText(el.collectionCount,`${state.discovered.size} / ${cardPool.length}`);
   }
   function synergyStatus(s) {
@@ -1212,18 +1231,19 @@
     if(signature===state.synergySignature)return;state.synergySignature=signature;
     el.synergyList.innerHTML=synergyPool.map(s=>{
       const status=synergyStatus(s),unlocked=active(s.id);
-      return `<div class="synergy-item${status==='ACTIVE'?' active':''}" data-help="synergy:${s.id}" tabindex="0"><span class="synergy-icon">${s.emoji}</span><b>${s.name}</b><small>${status}</small>${!unlocked?`<i style="width:${synergyProgress(s)*100}%"></i>`:''}</div>`;
+      return `<button type="button" class="synergy-item${status==='ACTIVE'?' active':''}" data-help="synergy:${s.id}" aria-label="${s.name}の説明を開く"><span class="synergy-icon">${s.emoji}</span><b>${s.name}</b><small>${status}</small>${!unlocked?`<i style="width:${synergyProgress(s)*100}%"></i>`:''}</button>`;
     }).join('');
     setText(el.synergyCount,`${state.activeSynergies.size} / 8`);
   }
   function renderPauseState() {
+    renderRespawn();
     const paused=isPaused();el.battlefield.classList.toggle('frozen',paused);
     if(paused)sound.stopAll();
     el.pausedLabel.classList.toggle('hidden',(!state.manualPause&&state.ready&&state.respawnRemaining<=0)||state.modalOpen);
-    setText(el.pausedLabel,state.respawnRemaining>0?`復帰まで ${Math.ceil(state.respawnRemaining)} 秒${state.manualPause?'（停止中）':''}`:state.ready?'BATTLE PAUSED':'準備中 · 出撃ボタンで開始');
+    setText(el.pausedLabel,state.respawnRemaining>0?`復帰まで ${Math.ceil(state.respawnRemaining)} 秒${state.manualPause?'（停止中）':''}`:state.ready?'一時停止中':'準備中 · 出撃ボタンで開始');
     el.pauseBtn.setAttribute('aria-pressed',String(state.manualPause));
     el.pauseBtn.setAttribute('aria-label',state.manualPause?'戦闘を再開':'戦闘を一時停止');
-    setText(el.pauseBtn,state.manualPause?'▶ RESUME':'Ⅱ PAUSE');
+    setText(el.pauseBtn,state.manualPause?'▶ 再開':'Ⅱ 一時停止');
   }
   function renderAVControls() {
     sound.updateControls();const high=settings.fxIntensity==='max';
@@ -1309,19 +1329,34 @@
     else if(value.startsWith('boss:')){const b=bossProfiles.find(b=>b.id===value.slice(5));el.helpTooltip.textContent=b.name+'\n'+b.desc+'\n攻略：'+b.hint;}
     else el.helpTooltip.textContent=helpText({dataset:{help:value}});
   }
+  let guideReturnFocus=null;
+  function openGuide(topic) {
+    if(state.modalOpen||state.decisionOpen||state.helpOpen)return;
+    guideReturnFocus=document.activeElement;if(topic)$('guideTopic').value=topic;
+    state.helpOpen=true;renderGuide();$('guideDialog').showModal();renderPauseState();
+  }
+  function openSettings(kind) {
+    const target=kind==='display'?$('fontScale'):kind==='animation'?$('animationPolicy'):kind==='effects'?$('fxFlash'):kind==='goals'?$('goalChoice'):$('backupBtn');
+    for(let node=target.parentElement;node;node=node.parentElement)if(node.tagName==='DETAILS')node.open=true;
+    target.focus({preventScroll:true});target.scrollIntoView({block:'center',behavior:'instant'});
+  }
+  document.addEventListener('click',event=>{const button=event.target.closest('[data-settings]');if(button)openSettings(button.dataset.settings);});
   function initializeHelp() {
     const groups=[['操作',[['openMax','📦 MAX開封'],['enemyUpgrade','🔥 敵強化 Lv.999'],['player','🧙 プレイヤー'],['wave','⚔ WAVE'],['pause','Ⅱ 停止・復帰'],['sound','🔊 サウンド'],['reset','↻ 初期化']]],['敵',enemyCatalog.filter(e=>e.id).map(e=>['foe:'+e.id,e.emoji+' '+e.name])],['キャラ',characterPool.map(c=>['character:'+c.id,c.emoji+' '+c.name])],['カード',cardPool.map(c=>['card:'+c.id,c.emoji+' '+c.name])],['シナジー',synergyPool.map(s=>['synergy:'+s.id,s.emoji+' '+s.name])]];
     groups.push(['能力・システム',Object.entries(helpDefinitions).filter(([key])=>!groups[0][1].some(([id])=>id===key)).map(([key,value])=>[key,(typeof value==='function'?value():value).split('\n')[0]])]);
     groups.push(['ボス',bossProfiles.map(b=>['boss:'+b.id,b.emoji+' '+b.name])]);
     $('guideTopic').innerHTML=groups.map(([label,entries])=>'<optgroup label="'+label+'">'+entries.map(([id,name])=>'<option value="'+id+'">'+name+'</option>').join('')+'</optgroup>').join('');
-    $('guideBtn').addEventListener('click',()=>{if(state.modalOpen||state.decisionOpen)return;state.helpOpen=true;renderGuide();$('guideDialog').showModal();renderPauseState();});
+    $('guideBtn').addEventListener('click',()=>openGuide());
+    for(const list of [el.buildList,el.synergyList])list.addEventListener('click',event=>{const button=event.target.closest('button[data-help]');if(button){const [kind,id]=button.dataset.help.split(':');const item=kind==='card'?byId[id]:synergyPool.find(s=>s.id===id);openLibrary(kind==='card'?'cards':'synergies',item.name);}});
     $('guideTopic').addEventListener('change',renderGuide);
     $('guideCloseBtn').addEventListener('click',()=>$('guideDialog').close());
-    $('guideDialog').addEventListener('close',()=>{state.helpOpen=false;renderPauseState();$('guideBtn').focus({preventScroll:true});});
+    $('guideDialog').addEventListener('close',()=>{state.helpOpen=false;renderPauseState();(guideReturnFocus?.isConnected?guideReturnFocus:$('guideBtn')).focus({preventScroll:true});});
     for(const button of document.querySelectorAll('[data-jump]'))button.addEventListener('click',()=>{const section=$(button.dataset.jump);const details=section.closest('details');if(details)details.open=true;focusSection(section.id);});
   }
   function renderUI() {
     const stats=snapshotStats();
+    setText($('availableGold'),'所持 '+fmt(state.gold)+' コイン');
+    setText($('purchaseStatus'),state.packs>=MAX_RESOURCE?'パック所持数が上限です':state.gold<100?'購入まであと '+exact(100-state.gold)+' コイン':'100コインで10パック購入');
     setText(el.worldText,`${state.world}-${state.stage}`);setText(el.waveText,`${state.wave} / 5`);
     setText(el.waveType,state.waveType.toUpperCase());el.waveType.classList.toggle('special',state.waveType!=='normal');
     const timeLeft=Math.max(0,Math.ceil(state.waveLimit-state.waveElapsed));
@@ -1348,12 +1383,12 @@
     el.bossShieldStatus.classList.toggle('hidden',!boss);
     if(boss)setText(el.bossShieldStatus,`🛡 ボス防壁 ${fmt(boss.shield)} / ${fmt(boss.shieldMax)} · ${boss.enraged?'再展開済み（残り0回）':'HP40%で再展開（残り1回）'}`);
     $('bossSkillStatus').classList.toggle('hidden',!boss);
-    if(boss){const profile=bossProfiles.find(b=>b.id===boss.bossProfile),warning=bossWindingUp(boss),exposed=boss.exposedUntil>state.gameTime;setText($('bossSkillStatus'),`${profile.emoji} ${profile.name} · ${exposed?'BREAK 弱体 '+Math.ceil(boss.exposedUntil-state.gameTime)+'秒':boss.bossProfile==='bastion'&&boss.skillUses>=3?'再装填を使い切った':(warning?'⚠ ':'')+profile.skill+'まで '+Math.max(0,boss.skillInterval-boss.skillTimer).toFixed(1)+'秒'}${boss.bossProfile==='bastion'?' / 装填残り'+Math.max(0,3-boss.skillUses)+'回':''}`);$('bossSkillStatus').classList.toggle('urgent',warning);}
+    if(boss){const profile=bossProfiles.find(b=>b.id===boss.bossProfile),warning=bossWindingUp(boss),exposed=boss.exposedUntil>state.gameTime;setText($('bossSkillStatus'),`${profile.emoji} ${profile.name} · ${exposed?'BREAK 弱体 '+Math.ceil(boss.exposedUntil-state.gameTime)+'秒':boss.bossProfile==='bastion'&&boss.skillUses>=3?'再装填を使い切った':(warning?'⚠ ':'')+profile.skill+'まで '+Math.max(0,boss.skillInterval-boss.skillTimer).toFixed(1)+'秒'}${boss.bossProfile==='bastion'?' / 装填残り'+Math.max(0,3-boss.skillUses)+'回':''}${warning?' / 防壁を割ると中断＋3秒弱体':''}`);$('bossSkillStatus').classList.toggle('urgent',warning);}
     el.bossProgress.style.width=(boss?boss.hp/boss.maxHp*100:((state.wave-1)+Math.min(1,state.waveKills/targetWaveKills()))/5*100)+'%';
     setText(el.progressLabel,boss?'BOSS HP':'STAGE PROGRESS');
     setText(el.sectorText,String(state.world).padStart(2,'0'));setText(el.enemyCount,`HOSTILES ${state.enemies.length} / ${maxEnemies()}`);
     const selected=state.selectedOpen==='max'?state.packs:Math.min(state.selectedOpen,state.packs);
-    const buttonText=`📦 OPEN ×${state.selectedOpen==='max'?'MAX · '+fmt(selected):fmt(selected)} →`;
+    const buttonText=`📦 開封 ×${state.selectedOpen==='max'?'MAX · '+fmt(selected):fmt(selected)} →`;
     setText(el.openBtn,buttonText);el.openBtn.disabled=selected<=0;
     el.buyPackBtn.disabled=state.gold<100||state.packs>=MAX_RESOURCE;
     setText(el.totalOpened,'TOTAL OPENED '+fmt(state.totalOpened));
@@ -1428,13 +1463,13 @@
   function resetGame(ready=true) {
     hideHelp();sound.stopAll();
     for(const enemy of [...state.enemies])removeEnemy(enemy);clearEffects();processingDeaths=false;
-    Object.assign(state,initialState());state.ready=ready;lastFrame=null;renderElapsed=0;
+    Object.assign(state,initialState());state.ready=ready;$('enemyLevelStatus').classList.remove('is-error');lastFrame=null;renderElapsed=0;
     el.packModal.classList.add('hidden');el.packModal.setAttribute('aria-hidden','true');
     el.packConfetti.replaceChildren();el.packStage.classList.remove('hero-revealed');
     document.body.classList.remove('modal-open');document.querySelector('.app-shell').inert=false;
     el.battlefield.className='battlefield';el.waveBanner.classList.remove('show');el.synergyToast.classList.remove('show');
     el.playerCard.classList.remove('hurt');clearDebuffs();el.supplyNotice.textContent='';el.commandNotice.textContent='';
-    el.packResult.className='pack-result empty-state';el.packResult.innerHTML='<span>✦</span><b>YOUR NEXT BUILD IS IN THE BOX.</b><p>パックを開封すると、直近の結果がここに残ります。</p>';
+    el.packResult.className='pack-result empty-state';el.packResult.innerHTML='<span>✦</span><b>開封結果はここに表示します</b><p>パックを開封すると、直近の結果がここに残ります。</p>';
     el.rareOnly.checked=false;el.newOnly.checked=false;setText(el.speedBtn,'⏩ ×1');
     for(const button of el.amountButtons.children) {
       const selected=button.dataset.amount==='1';button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));
@@ -1442,14 +1477,35 @@
     startWave(true);renderPauseState();renderAVControls();renderUI();
   }
   const achievements=[
-    {label:'箱のはじまり',goal:'最初のパックを開封',done:()=>state.totalOpened>0},
-    {label:'千の箱',goal:'合計1,000個開封',done:()=>state.totalOpened>=1000},
-    {label:'秘密の発見',goal:'SECRETを1種類入手',done:()=>cardPool.some(c=>c.rarity==='SECRET'&&state.discovered.has(c.id))},
-    {label:'ボスブレイカー',goal:'ボスを1体討伐',done:()=>state.bossesDefeated>0},
-    {label:'次の世界へ',goal:'WORLD 2に到達',done:()=>Object.values(state.records).some(n=>n>25)},
-    {label:'四つの戦い方',goal:'全4キャラを解放',done:()=>state.unlockedCharacters.size===4},
-    {label:'完全コレクション',goal:'全26種類を入手',done:()=>state.discovered.size===cardPool.length},
+    {id:'firstPack',progress:()=>Math.min(1,state.totalOpened)+' / 1個',label:'箱のはじまり',goal:'最初のパックを開封',done:()=>state.totalOpened>0},
+    {id:'thousandPacks',progress:()=>exact(Math.min(1000,state.totalOpened))+' / 1,000個',label:'千の箱',goal:'合計1,000個開封',done:()=>state.totalOpened>=1000},
+    {id:'firstSecret',progress:()=>Math.min(1,cardPool.filter(c=>c.rarity==='SECRET'&&state.discovered.has(c.id)).length)+' / 1種類',label:'秘密の発見',goal:'SECRETを1種類入手',done:()=>cardPool.some(c=>c.rarity==='SECRET'&&state.discovered.has(c.id))},
+    {id:'firstBoss',progress:()=>Math.min(1,state.bossesDefeated)+' / 1体',label:'ボスブレイカー',goal:'ボスを1体討伐',done:()=>state.bossesDefeated>0},
+    {id:'worldTwo',progress:()=>'最高WORLD '+(Math.floor((Math.max(1,...Object.values(state.records))-1)/25)+1)+' / 目標2',label:'次の世界へ',goal:'WORLD 2に到達',done:()=>Object.values(state.records).some(n=>n>25)},
+    {id:'allCharacters',progress:()=>state.unlockedCharacters.size+' / 4キャラ',label:'四つの戦い方',goal:'全4キャラを解放',done:()=>state.unlockedCharacters.size===4},
+    {id:'allCards',progress:()=>state.discovered.size+' / '+cardPool.length+'種類',label:'完全コレクション',goal:'全26種類を入手',done:()=>state.discovered.size===cardPool.length},
   ];
+  function goalInfo(value=state.pinnedGoal) {
+    if(!value)return null;
+    if(value.split(':').length!==2)return null;
+    const [kind,id]=value.split(':');
+    if(kind==='achievement'){const a=achievements.find(a=>a.id===id);return a?{name:a.label,done:a.done(),progress:a.goal+' · '+a.progress()}:null;}
+    if(kind==='card'){const c=cardPool.find(c=>c.id===id);return c?{name:c.name+'を入手',done:state.discovered.has(id),progress:'所持 '+exact(state.cardCounts[id]||0)+'枚 / 初入手が目標'}:null;}
+    if(kind==='synergy'){const s=synergyPool.find(s=>s.id===id);return s?{name:s.name+'を解放',done:state.activeSynergies.has(id),progress:requirementText(s)}:null;}
+    return null;
+  }
+  function renderGoals() {
+    const choice=$('goalChoice');
+    if(choice.options.length===1){for(const [kind,label,items] of [['achievement','実績',achievements.map(a=>({id:a.id,name:a.label}))],['card','カード収集',cardPool],['synergy','シナジー',synergyPool]]){const group=document.createElement('optgroup');group.label=label;for(const item of items){const option=document.createElement('option');option.value=kind+':'+item.id;option.textContent=item.name;group.append(option);}choice.append(group);}}
+    choice.value=state.pinnedGoal||'';const goal=goalInfo();
+    setText($('pinnedGoalStatus'),goal?(goal.done?'達成済み：':'固定目標：')+goal.name+(goal.done?'':' · '+(state.pinnedGoal.startsWith('synergy:')?'不足数は目標の詳細へ':goal.progress)):'目標を1件固定できます');
+    setText($('goalDetail'),goal?(goal.done?'達成済み。':'')+goal.progress:'実績・カード収集・シナジーから選ぶと、この保存枠に記録します。');
+    $('clearGoalBtn').disabled=!goal;
+    const character=characterPool.find(c=>c.id===state.character),synergies=[...state.activeSynergies].map(id=>synergyPool.find(s=>s.id===id).name);
+    setText($('resumeSummary'),'キャラ：'+character.name+' ／ 解放済みシナジー：'+(synergies.slice(0,3).join('・')||'なし')+(synergies.length>3?' ほか'+(synergies.length-3)+'件':'')+' ／ 目標：'+(goal?goal.name+(goal.done?'（達成済み）':''):'未選択'));
+  }
+  $('goalChoice').addEventListener('change',event=>{state.pinnedGoal=event.target.value||null;saveProgress();renderGoals();});
+  $('clearGoalBtn').addEventListener('click',()=>{state.pinnedGoal=null;saveProgress();renderGoals();$('goalChoice').focus();});
   const progressPosition=()=>Math.min(MAX_RESOURCE,(state.world-1)*25+(state.stage-1)*5+state.wave);
   const libraryState={tab:'enemies',returnFocus:null};
   function libraryEntries(tab) {
@@ -1457,8 +1513,8 @@
     if(tab==='bosses')return bossProfiles.map(b=>({name:b.emoji+' '+b.name,desc:b.desc+' 共通：HP60%分の防壁、HP40%で1回再展開＋激昂。',hint:b.hint,meta:'1.5秒予告 / WORLDとSTAGEに応じ3タイプが順番に登場'}));
     if(tab==='cards')return cardPool.map(c=>({name:c.emoji+' '+c.name+' / '+c.rarity,desc:c.desc,hint:['armor','barrier','parry','vital','aegis','regen'].includes(c.id)?'防壁・HP・軽減・完全ガードを組み合わせ、貫通や回復妨害にも備える。':['splash','inferno','chain','starfall','void'].includes(c.id)?'召喚雑兵や分裂した敵が密集する場面に有効。':'キャラの長所と組み合わせ、味方シナジー図鑑の解放条件も確認。',meta:state.discovered.has(c.id)?'入手済 ×'+exact(state.cardCounts[c.id]):'未入手 · パックから入手',owned:state.discovered.has(c.id)}));
     if(tab==='characters')return characterPool.map(c=>({name:c.emoji+' '+c.name,desc:'長所：'+c.merit+'。弱点：'+c.drawback+'。',hint:c.id==='nova'?'群体・召喚・分裂に強い。防壁容量が低いためHPと軽減を補う。':c.id==='ranger'?'中継役を含む射手隊を崩す。被ダメージ増に注意。':c.id==='counter'?'接触や弾幕へ反撃。通常火力が低いため時間制限に注意。':'特殊な弱点がない。カードのシナジーで火力と防御を伸ばす。',meta:state.unlockedCharacters.has(c.id)?'解放済み':'解放費用 '+exact(c.cost)+' GOLD'}));
-    if(tab==='synergies')return synergyPool.map(s=>({name:s.emoji+' '+s.name,desc:s.description,hint:'条件：'+Object.entries(s.requires).map(([id,n])=>byId[id].name+' ×'+n).concat(s.extraLabel?[s.extraLabel]:[]).join(' ＋ '),meta:synergyStatus(s)}));
-    if(tab==='links')return enemyLinkCatalog.map(s=>({name:s.emoji+' '+s.name,desc:s.effect,hint:s.hint,meta:s.condition+' / 範囲38未満・同種は非重複'}));
+    if(tab==='synergies')return synergyPool.map(s=>({name:s.emoji+' '+s.name,desc:s.description,hint:'必要数：'+requirementText(s),meta:(active(s.id)?'解放済み · ':'未解放 · ')+synergyStatus(s)}));
+    if(tab==='links')return enemyLinkCatalog.map(s=>({name:s.emoji+' '+s.name,desc:s.effect,hint:s.hint,meta:s.condition+' / 近くの仲間に効果・同種は非重複。中心を固定照準すると、現在効果を受ける敵を表示。'}));
     return strategyHints.map(([name,desc])=>({name,desc,hint:'戦闘中の攻略ヒントと敵連携表示も確認しよう。',meta:'攻略ヒント'}));
   }
   function renderLibrary() {
@@ -1467,15 +1523,16 @@
     setText($('libraryCount'),shown.length+' / '+entries.length+'件 · 全種類・未入手も表示');
     $('libraryList').innerHTML=shown.length?shown.map(e=>`<article class="library-entry${e.owned===false?' unowned':''}"><h3>${e.name}</h3><small>${e.meta}</small><p>${e.desc}</p><p class="strategy-note">💡 ${e.hint}</p></article>`).join(''):'<p class="library-empty">該当する項目はありません。検索語を短くしてみよう。</p>';
   }
-  function openLibrary(tab='enemies') {
+  function openLibrary(tab='enemies',query='') {
     if(state.modalOpen||state.decisionOpen||state.helpOpen)return;
-    libraryState.tab=tab;libraryState.returnFocus=document.activeElement;$('librarySearch').value='';state.helpOpen=true;renderLibrary();$('libraryDialog').showModal();renderPauseState();$('librarySearch').focus();
+    libraryState.tab=tab;libraryState.returnFocus=document.activeElement;$('librarySearch').value=query;state.helpOpen=true;renderLibrary();$('libraryDialog').showModal();renderPauseState();$('librarySearch').focus();
   }
   $('libraryBtn').addEventListener('click',()=>openLibrary());
   for(const button of document.querySelectorAll('[data-library]'))button.addEventListener('click',()=>openLibrary(button.dataset.library));
   $('librarySearch').addEventListener('input',renderLibrary);
   $('libraryTabs').addEventListener('click',event=>{const button=event.target.closest('[data-library-tab]');if(button){libraryState.tab=button.dataset.libraryTab;$('librarySearch').value='';renderLibrary();$('libraryList').scrollTop=0;}});
   $('libraryCloseBtn').addEventListener('click',()=>$('libraryDialog').close());
+  $('libraryDialog').addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();$('libraryDialog').close();}});
   $('libraryDialog').addEventListener('close',()=>{state.helpOpen=false;renderPauseState();if(libraryState.returnFocus?.isConnected)libraryState.returnFocus.focus({preventScroll:true});});
   function positionLabel(n){return n?`WORLD ${Math.floor((n-1)/25)+1}-${Math.floor((n-1)%25/5)+1} / WAVE ${(n-1)%5+1}`:'未出撃';}
   function renderArchive() {
@@ -1519,7 +1576,7 @@
     settings[key]=event.target.checked;if(!settings.fxFlash){state.flashPower=0;el.battleFlash.style.opacity=0;}if(!settings.fxShake)el.battlefield.classList.remove('shaking');if(!settings.fxParticles)juiceParticles.length=0;
     for(const [kind,queue] of Object.entries(effects))if(kind!=='projectile')for(const fx of queue)fx.el.style.display=(kind==='damage'?!settings.fxNumbers:!settings.fxParticles)?'none':'';saveProgress();
   });
-  function resetEconomy(){state.earnedGold=0;state.earnedPacks=0;state.combatSeconds=0;}
+  function resetEconomy(){state.earnedGold=0;state.earnedPacks=0;state.combatSeconds=0;state.economyStartGold=state.gold;state.economyStartPacks=state.packs;}
   function compareCharacters() {
     const original=state.character;
     try{return characterPool.map(c=>{
@@ -1531,7 +1588,15 @@
     $('characterCompare').innerHTML='<thead><tr><th>キャラ</th><th>単体 / 秒</th><th>密集5体 / 秒</th><th>反撃 / 回</th><th>100被弾→軽減後</th><th>防壁上限</th></tr></thead><tbody>'+compareCharacters().map(c=>`<tr><th>${characterPool.find(p=>p.id===c.id).name}</th><td>${fmtDecimal(c.single)}</td><td>${fmtDecimal(c.group)}</td><td>${fmtDecimal(c.counter)}</td><td>${fmtDecimal(c.incoming)}</td><td>${fmt(c.shield)}</td></tr>`).join('')+'</tbody>';
   }
   $('characterCompare').closest('details').addEventListener('toggle',renderCharacterComparison);
-  $('enemyLevelChoice').addEventListener('change',event=>{const level=Number(event.target.value);if(Number.isInteger(level)&&level>=0&&level<=state.unlockedEnemyLevel){state.pendingEnemyLevel=level;saveProgress();renderUI();}});
+  function reserveEnemyLevel(value) {
+    const level=Number(value),valid=String(value).trim()!==''&&Number.isInteger(level)&&level>=0&&level<=state.unlockedEnemyLevel;
+    $('enemyLevelStatus').classList.toggle('is-error',!valid);
+    if(!valid){setText($('enemyLevelStatus'),'0〜'+state.unlockedEnemyLevel+'の整数を入力してください。予約は変更していません。');return false;}
+    state.pendingEnemyLevel=level;saveProgress();renderUI();return true;
+  }
+  $('enemyLevelChoice').addEventListener('change',event=>reserveEnemyLevel(event.target.value));
+  $('enemyLevelForm').noValidate=true;
+  $('enemyLevelForm').addEventListener('submit',event=>{event.preventDefault();reserveEnemyLevel($('enemyLevelInput').value);});
   // Versioned local checkpoints contain only data, never DOM nodes, timers or callbacks.
   const SAVE_KEY='lootmoji.progress.v1',SAVE_VERSION=1;
   const progressKeys=['world','stage','wave','kills','gold','packs','hp','maxHp','damage','aps','crit','critMult','packChance','splash','goldMult','doubleChance','magnetChance','chainChance','inferno','packBonus','infinityChance','infinityProcs','armor','shield','shieldMax','regen','blockChance','aegisCopies','chronoSlow','starfallCopies','enemyLevel','unlockedEnemyLevel','totalOpened','normalCards','bestRareBatch','waveTimeouts','bossesDefeated'];
@@ -1544,11 +1609,13 @@
   function captureProgress() {
     if(state.ready)state.records[state.character]=Math.max(state.records[state.character]||0,progressPosition());
     const data={};for(const key of progressKeys)data[key]=state[key];
-    return {...data,character:state.character,unlockedCharacters:[...state.unlockedCharacters],cardCounts:{...state.cardCounts},discovered:[...state.discovered],activeSynergies:[...state.activeSynergies],waveType:state.waveType,pendingEnemyLevel:state.pendingEnemyLevel,records:structuredClone(state.records),respawnRemaining:state.respawnRemaining};
+    return {...state.progressExtras,...data,pinnedGoal:state.pinnedGoal,character:state.character,unlockedCharacters:[...state.unlockedCharacters],cardCounts:{...state.cardCounts},discovered:[...state.discovered],activeSynergies:[...state.activeSynergies],waveType:state.waveType,pendingEnemyLevel:state.pendingEnemyLevel,records:structuredClone(state.records),respawnRemaining:state.respawnRemaining};
   }
   function validProgress(raw) {
     if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('進行データの形式が不正です');
-    const clean={};for(const key of progressKeys){const n=raw[key];if(typeof n!=='number'||!Number.isFinite(n)||n<0||n>MAX_STAT)throw Error('数値が不正：'+key);clean[key]=n;}
+    const clean={...raw};for(const key of progressKeys){const n=raw[key];if(typeof n!=='number'||!Number.isFinite(n)||n<0||n>MAX_STAT)throw Error('数値が不正：'+key);clean[key]=n;}
+    clean.pinnedGoal=raw.pinnedGoal??null;
+    if(clean.pinnedGoal!==null&&(typeof clean.pinnedGoal!=='string'||!goalInfo(clean.pinnedGoal)))throw Error('固定目標が不正です');
     clean.respawnRemaining=raw.respawnRemaining??0;
     if(typeof clean.respawnRemaining!=='number'||!Number.isFinite(clean.respawnRemaining)||clean.respawnRemaining<0||clean.respawnRemaining>10)throw Error('復帰時間が不正です');
     for(const key of ['world','stage','wave','kills','gold','packs','enemyLevel','unlockedEnemyLevel','totalOpened','normalCards','bestRareBatch','waveTimeouts','infinityProcs','aegisCopies','starfallCopies','bossesDefeated'])if(!Number.isSafeInteger(clean[key]))throw Error('整数が不正：'+key);
@@ -1575,22 +1642,32 @@
     for(const key of ['autoSlow','fxFlash','fxShake','fxParticles','fxNumbers','rareOnly','newOnly'])if(typeof incoming[key]==='boolean')prefs[key]=incoming[key];
     if([1,2,4].includes(incoming.speed))prefs.speed=incoming.speed;
     if([1,10,100,1000,10000,100000,1000000,'max'].includes(incoming.amount))prefs.amount=incoming.amount;
-    for(const [key,values] of Object.entries({fxIntensity:['max','low'],fontScale:['normal','large'],targetPolicy:['standard','danger','boss'],animationPolicy:['luxury','special','quick']}))if(values.includes(incoming[key]))prefs[key]=incoming[key];
+    for(const [key,values] of Object.entries({fxIntensity:['max','low'],fontScale:['normal','large'],targetPolicy:['standard','danger','boss'],targetSort:['standard','danger'],animationPolicy:['luxury','special','quick']}))if(values.includes(incoming[key]))prefs[key]=incoming[key];
     const audio={enabled:raw.audio?.enabled!==false,volume:typeof raw.audio?.volume==='number'&&Number.isFinite(raw.audio.volume)?clamp(raw.audio.volume,0,1):.35};
     const active=/^(normal|demo):(standard|relaxed|challenge)$/.test(raw.active||'')?raw.active:'normal:standard';
     return {version:SAVE_VERSION,slots,settings:prefs,audio,active};
   }
   function saveEnvelope() {
-    const audio=sound.inspect();return {version:SAVE_VERSION,active:slotKey(),slots:session.slots,settings:{...settings},audio:{enabled:audio.enabled,volume:audio.volume}};
+    const audio=sound.inspect(),source=session.sourceEnvelope;return {...source,version:SAVE_VERSION,active:slotKey(),slots:session.slots,settings:{...source.settings,...settings},audio:{...source.audio,enabled:audio.enabled,volume:audio.volume}};
   }
+  function renderPersistence() {
+    const message=session.storageError||session.restoreError;
+    setText($('persistenceMessage'),message);$('persistenceAlert').classList.toggle('hidden',!message);
+    setText($('saveStatus'),session.saveStatus);
+  }
+  function reportRestore(message,error=false) {
+    session.restoreError=error?message:'';
+    setText($('restoreStatus'),message);$('restoreStatus').classList.toggle('error',error);renderPersistence();
+  }
+  $('saveRecoveryBtn').addEventListener('click',()=>{$('preferencesPanel').querySelector('details').open=true;focusSection('preferencesPanel');});
   function saveProgress() {
     if(session.guest||!session.storageReady)return false;
     session.slots[slotKey()]=captureProgress();
-    try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveEnvelope()));session.saveStatus='自動保存済み · このブラウザ／ファイルの保存領域';return true;}
-    catch{session.saveStatus='保存できません（容量・ブラウザ設定）。バックアップ保存をご利用ください。';return false;}
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveEnvelope()));session.saveStatus='自動保存済み · このブラウザ／ファイルの保存領域';session.storageError='';renderPersistence();return true;}
+    catch{session.saveStatus='保存できません（容量・ブラウザ設定）。バックアップ保存をご利用ください。';session.storageError=session.saveStatus;renderPersistence();return false;}
   }
   function syncPreferences() {
-    for(const key of ['targetPolicy','fontScale','animationPolicy'])$(key).value=settings[key];
+    for(const key of ['targetPolicy','targetSort','fontScale','animationPolicy'])$(key).value=settings[key];
     for(const key of ['autoSlow','fxFlash','fxShake','fxParticles','fxNumbers'])$(key).checked=settings[key];
     state.speed=settings.speed;state.selectedOpen=settings.amount;el.rareOnly.checked=settings.rareOnly;el.newOnly.checked=settings.newOnly;
     setText(el.speedBtn,'⏩ ×'+state.speed);for(const button of el.amountButtons.children){const active=String(state.selectedOpen)===button.dataset.amount;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));}
@@ -1600,27 +1677,32 @@
     resetGame(false);if(data){
       for(const enemy of [...state.enemies])removeEnemy(enemy);clearEffects();
       for(const key of progressKeys)state[key]=data[key];
-      state.character=data.character;state.cardCounts={...data.cardCounts};state.discovered=new Set(data.discovered);state.unlockedCharacters=new Set(data.unlockedCharacters);state.activeSynergies=new Set(data.activeSynergies);
+      state.progressExtras={...data};state.pinnedGoal=data.pinnedGoal??null;state.character=data.character;state.cardCounts={...data.cardCounts};state.discovered=new Set(data.discovered);state.unlockedCharacters=new Set(data.unlockedCharacters);state.activeSynergies=new Set(data.activeSynergies);
       state.records={...data.records};state.buildDirty=true;state.commandSignature='';state.synergySignature='';
       state.shield=Math.min(state.shield,shieldCapacity());startWave(false,data.waveType);state.pendingEnemyLevel=data.pendingEnemyLevel;state.respawnRemaining=data.respawnRemaining??0;
     }
-    prepareBattle(data?'続きから再開しました。同じWAVEの冒頭から再挑戦。HP・防壁・資源・ビルドを保持しています。':'準備中は敵も制限時間も止まっています。');
+    resetEconomy();prepareBattle(data?'続きから再開しました。同じWAVEの冒頭から再挑戦。HP・防壁・資源・ビルドを保持しています。':'準備中は敵も制限時間も止まっています。');
     syncPreferences();
   }
   function initializeStorage() {
     try {
       const stored=localStorage.getItem(SAVE_KEY);
-      if(stored){const data=validateSave(JSON.parse(stored));session.slots=data.slots;[session.mode,session.preset]=data.active.split(':');Object.assign(settings,data.settings);sound.setVolume(data.audio.volume);if(sound.inspect().enabled!==data.audio.enabled)sound.toggle();}
+      if(stored){const raw=JSON.parse(stored),data=validateSave(raw);session.sourceEnvelope=raw;session.slots=data.slots;[session.mode,session.preset]=data.active.split(':');Object.assign(settings,data.settings);sound.setVolume(data.audio.volume);if(sound.inspect().enabled!==data.audio.enabled)sound.toggle();}
       session.storageReady=true;restoreProgress(session.slots[slotKey()]);saveProgress();
     } catch(error) {
       // Never overwrite an unreadable checkpoint automatically.
-      session.storageReady=false;session.saveStatus='保存データを読み込めません：'+error.message+'。元データは保持しました。ゲスト試遊またはバックアップ復元をご利用ください。';prepareBattle();
+      session.storageReady=false;session.saveStatus='保存データを読み込めません。元データは保持しました。ゲスト試遊またはバックアップ復元をご利用ください。';session.storageError=session.saveStatus;prepareBattle();renderPersistence();
     }
+  }
+  function modeLabel(mode=session.mode,preset=session.preset) {return (mode==='demo'?'DEMO体験':'通常プレイ')+' / '+presets[preset].name;}
+  function slotDestination(mode,preset) {
+    const data=mode===session.mode&&preset===session.preset?state:session.slots[mode+':'+preset];
+    return data?'WORLD '+data.world+'-'+data.stage+' / WAVE '+data.wave:'未開始・128パック';
   }
   function switchSlot(mode,preset) {
     if(!['normal','demo'].includes(mode)||!presets[preset]||state.modalOpen)return;
     session.slots[slotKey()]=captureProgress();saveProgress();session.mode=mode;session.preset=preset;
-    restoreProgress(session.slots[slotKey()]);saveProgress();renderUI();
+    restoreProgress(session.slots[slotKey()]);saveProgress();renderUI();setText($('slotNotice'),modeLabel()+'の保存枠へ移動しました。元の枠は保持しています。');
   }
   function giveDemoPacks() {
     if(session.mode!=='demo')switchSlot('demo',session.preset);
@@ -1633,19 +1715,26 @@
   $('playPreset').addEventListener('change',event=>{switchSlot(session.mode,event.target.value);focusSection('packPanel');});
   let savedSession=null;
   $('guestBtn').addEventListener('click',()=>{
-    if(!session.guest){saveProgress();savedSession={slots:structuredClone(session.slots),mode:session.mode,preset:session.preset,settings:{...settings},audio:sound.inspect()};session.guest=true;session.slots={};session.mode='normal';session.preset='standard';restoreProgress(null);}
-    else {session.guest=false;session.slots=savedSession.slots;session.mode=savedSession.mode;session.preset=savedSession.preset;Object.assign(settings,savedSession.settings);sound.setVolume(savedSession.audio.volume);if(sound.inspect().enabled!==savedSession.audio.enabled)sound.toggle();restoreProgress(session.slots[slotKey()]);savedSession=null;}
+    if(!session.guest){saveProgress();savedSession={sourceEnvelope:session.sourceEnvelope,slots:structuredClone(session.slots),mode:session.mode,preset:session.preset,settings:{...settings},audio:sound.inspect()};session.guest=true;session.slots={};session.sourceEnvelope={};session.mode='normal';session.preset='standard';restoreProgress(null);}
+    else {session.guest=false;session.sourceEnvelope=savedSession.sourceEnvelope;session.slots=savedSession.slots;session.mode=savedSession.mode;session.preset=savedSession.preset;Object.assign(settings,savedSession.settings);sound.setVolume(savedSession.audio.volume);if(sound.inspect().enabled!==savedSession.audio.enabled)sound.toggle();restoreProgress(session.slots[slotKey()]);savedSession=null;}
     renderUI();
   });
-  $('animationPolicy').addEventListener('change',event=>{settings.animationPolicy=event.target.value;saveProgress();});
-  $('backupBtn').addEventListener('click',()=>{session.slots[slotKey()]=captureProgress();downloadBlob(new Blob([JSON.stringify(saveEnvelope(),null,2)],{type:'application/json'}),'るともじ-backup.json');});
+  $('animationPolicy').addEventListener('change',event=>{settings.animationPolicy=event.target.value;saveProgress();renderUI();});
+  $('backupBtn').addEventListener('click',()=>{session.slots[slotKey()]=captureProgress();downloadBlob(new Blob([JSON.stringify(saveEnvelope(),null,2)],{type:'application/json'}),'るともじ-backup.json');reportRestore('バックアップのダウンロードを開始しました。保存先を確認してください。');});
   $('restoreFile').addEventListener('change',async event=>{
     const file=event.target.files[0];event.target.value='';if(!file)return;
-    try {if(file.size>2000000)throw Error('2MB以下のバックアップを指定してください');const data=validateSave(JSON.parse(await file.text()));
+    try {
+      reportRestore('バックアップを確認しています。');
+      if(!file.size)throw Error('空のファイルです。バックアップ保存で作成したJSONを選んでください');
+      if(!/\.json$/i.test(file.name))throw Error('拡張子が.jsonのバックアップを選んでください');
+      if(file.type&&!['application/json','text/plain','application/octet-stream'].includes(file.type))throw Error('JSON形式のバックアップを選んでください');
+      if(file.size>2000000)throw Error('2MB以下のバックアップを指定してください');
+      const raw=JSON.parse(await file.text()),data=validateSave(raw);
+      reportRestore('内容を確認しました。復元の確認画面で選択してください。');
       askDecision('バックアップを復元しますか？',`${Object.keys(data.slots).length}枠を復元します。現在の${session.guest?'ゲスト':'保存'}データを置き換えます。必要なら先にバックアップしてください。`,()=>{
-        session.slots=data.slots;[session.mode,session.preset]=data.active.split(':');Object.assign(settings,data.settings);sound.setVolume(data.audio.volume);if(sound.inspect().enabled!==data.audio.enabled)sound.toggle();session.storageReady=true;restoreProgress(session.slots[slotKey()]);saveProgress();renderUI();
+        session.sourceEnvelope=raw;session.slots=data.slots;[session.mode,session.preset]=data.active.split(':');Object.assign(settings,data.settings);sound.setVolume(data.audio.volume);if(sound.inspect().enabled!==data.audio.enabled)sound.toggle();session.storageReady=true;session.storageError='';restoreProgress(session.slots[slotKey()]);saveProgress();renderUI();reportRestore(session.guest?'ゲスト枠に復元しました。ブラウザには保存しません。':session.storageError?'復元しましたが、自動保存に失敗しました。バックアップを保存してください。':'バックアップを復元し、自動保存しました。');
       });
-    } catch(error){session.saveStatus='復元できません：'+error.message;$('saveStatus').textContent=session.saveStatus;}
+    } catch(error){const reason=error instanceof SyntaxError?'JSONの形式が正しくありません。バックアップ保存で作成したファイルを選んでください。':error.message;reportRestore('復元できません：'+reason,true);}
   });
   document.addEventListener('visibilitychange',()=>{if(document.hidden)saveProgress();});
   window.addEventListener('pagehide',saveProgress);
@@ -1690,19 +1779,52 @@
     state.character=id;const after=snapshotStats();state.character=original;
     return `${c.name}：攻撃 ${fmtDecimal(before.damage)} → ${fmtDecimal(after.damage)}、毎秒攻撃 ${before.aps.toFixed(2)} → ${after.aps.toFixed(2)}、軽減 ${Math.round(before.armor*100)}% → ${Math.round(after.armor*100)}%、防壁上限 ${fmt(before.shieldMax)} → ${fmt(after.shieldMax)}。現在の防壁 ${fmt(state.shield)} → ${fmt(Math.min(state.shield,after.shieldMax))}（減った分は戻りません）。${c.merit}。弱点：${c.drawback}。${state.unlockedCharacters.has(id)?'交代は無料。':`解放費用 ${exact(c.cost)} GOLD。`}`;
   }
+  function enemyRole(enemy) {
+    if(enemy.boss)return 'ボス';
+    if(enemy.linkRole)return {rail:'中継',brood:'群体',prism:'共鳴',curse:'呪い'}[enemy.linkRole];
+    if(enemy.support)return {heal:'回復',summon:'召喚',shield:'防壁',haste:'加速'}[enemy.support]||'支援';
+    return enemy.bomber?'自爆':enemy.direct?'直撃':enemy.sniper?'狙撃':enemy.shieldDrain?'防壁吸収':enemy.debuff?'状態異常':enemy.pierce?'貫通':enemy.ranged?'射撃':enemy.summoned?'雑兵':'接触';
+  }
+  function renderTargetButtons(container,enemies) {
+    const focused=document.activeElement;
+    for(const button of [...container.children])if(!enemies.some(e=>String(e.id)===button.dataset.targetId))button.remove();
+    enemies.forEach((enemy,index)=>{
+      let button=container.querySelector('[data-target-id="'+enemy.id+'"]');
+      if(!button){button=document.createElement('button');button.className='ghost-btn';button.dataset.targetId=enemy.id;container.append(button);}
+      setText(button,enemy.emoji+' '+enemyRole(enemy)+' #'+enemy.id+(isUrgent(enemy)?' · 予告中':''));
+      button.setAttribute('aria-label',enemy.name+'（'+enemyRole(enemy)+'）に照準を固定');button.setAttribute('aria-pressed',String(enemy.id===state.targetId));
+      if(container.children[index]!==button)container.insertBefore(button,container.children[index]);
+    });
+    if(focused?.isConnected&&focused!==document.activeElement&&container.contains(focused))focused.focus({preventScroll:true});
+  }
+  $('targetSort').addEventListener('change',event=>{settings.targetSort=event.target.value;saveProgress();renderUI();});
+  $('priorityTargets').addEventListener('click',event=>{const button=event.target.closest('[data-target-id]');if(button){state.targetId=Number(button.dataset.targetId);renderUI();}});
+  function renderRespawn() {
+    $('respawnStatus').classList.toggle('hidden',state.respawnRemaining<=0);
+    setText($('respawnSeconds'),Math.ceil(state.respawnRemaining));
+    const reasons=[document.hidden?'タブ非表示':'',state.manualPause?'一時停止':'',state.modalOpen?'開封画面':'',state.decisionOpen?'確認画面':'',state.helpOpen?'図鑑・説明画面':''].filter(Boolean);
+    setText($('respawnReason'),reasons.length?'待ち時間を停止中：'+reasons.join('・')+'。閉じるか再開すると残り時間から進みます。':state.ready?'カウント中。0秒で自動復帰します。':'カウント中。0秒後に出撃できます。');
+    setText($('respawnCause'),state.lastDefeat||'復帰待ちです。パック開封・キャラ変更・敵Lv予約ができます。');
+  }
+  $('respawnLevelBtn').addEventListener('click',()=>{focusSection('commandPanel');$('enemyLevelInput').focus();$('enemyLevelInput').scrollIntoView({block:'center'});});
   function renderExperience() {
-    renderArchive();
+    renderArchive();renderGoals();
+    setText($('packPolicyLabel'),'現在：'+{luxury:'毎回豪華',special:'初入手・UR以上を中心に',quick:'高速（新規SECRETは演出）'}[settings.animationPolicy]);
     setText($('combatVitals'),`♥ HP ${fmt(state.hp)} / ${fmt(state.maxHp)} · 🛡 防壁 ${fmt(state.shield)} / ${fmt(shieldCapacity())}`);
     setText($('modeBadge'),`${session.guest?'ゲスト · ':''}${session.mode==='demo'?'DEMO体験':'通常プレイ'} / ${presets[session.preset].name}`);
     $('playMode').value=session.mode;$('playPreset').value=session.preset;
+    for(const option of $('playMode').options)setText(option,(option.value==='demo'?'DEMO（100万補給あり）':'通常プレイ')+' · '+slotDestination(option.value,session.preset));
+    for(const option of $('playPreset').options)setText(option,presets[option.value].name+' · '+slotDestination(session.mode,option.value));
+    setText($('battleModeBadge'),(session.guest?'ゲスト · ':'')+modeLabel()+' · 挑戦Lv.'+state.enemyLevel+(state.pendingEnemyLevel!==null?' → 次WAVE Lv.'+state.pendingEnemyLevel:''));
     setText($('presetRules'),presets[session.preset].description+' 記録・カード・資源はこの枠専用。');
     setText($('saveStatus'),session.guest?'ゲスト試遊：ブラウザに保存しません。終了時に破棄。保存プレイのデータは保持。':session.saveStatus);
     setText($('guestBtn'),session.guest?'ゲストを終了・保存プレイに戻る':'保存しないゲスト試遊');
     setText(el.demoPackBtn,session.mode==='demo'?'＋1M PACKS（DEMO補給）':'DEMO枠へ移動＋1M補給');
     $('readyPanel').classList.toggle('hidden',state.ready);
+    setText($('readyTitle'),state.totalOpened?'出撃の準備':'最初の128パックを開封');
+    setText($('nextAction'),state.totalOpened?'2. 能力を確認して出撃':'1. パック開封 → 2. 出撃（開封せずに出撃することもできます）');
     $('battleStartBtn').classList.toggle('hidden',state.ready);$('battleStartBtn').disabled=state.respawnRemaining>0;$('startBattleBtn').disabled=state.respawnRemaining>0;
-    $('respawnStatus').classList.toggle('hidden',state.respawnRemaining<=0);
-    setText($('respawnSeconds'),Math.ceil(state.respawnRemaining));
+    renderRespawn();
     $('readyOpenBtn').disabled=state.packs<=0;$('readyOpenBtn').textContent=state.totalOpened?'📦 追加のパックをMAX開封':'📦 最初のパックをMAX開封';
     setText($('waveGoal'),state.wave===5?'突破条件：ボスを討伐':`突破まであと ${Math.max(0,targetWaveKills()-state.waveKills)}体（${state.waveKills} / ${targetWaveKills()}）`);
     const locked=state.enemies.find(e=>e.id===state.targetId),urgent=state.enemies.filter(isUrgent);
@@ -1710,15 +1832,18 @@
     setText($('threatAlert'),urgent.length?`⚠ ${urgent.map(threatLabel).join(' / ')} · 対象を選んで撃破！${settings.autoSlow?'（戦闘速度 ×0.5）':''}`:'予告監視中 · 回復役・召喚役も固定照準で先に撃破');
     const links=activeEnemyLinks(),uniqueLinks=[...new Map(links.map(l=>[l.role,l])).values()],boss=state.enemies.find(e=>e.boss);
     $('enemyLinksText').classList.toggle('hidden',!links.length);setText($('enemyLinksText'),'敵連携：'+uniqueLinks.map(l=>l.info.emoji+' '+l.info.name).join(' / '));
-    for(const enemy of state.enemies)enemy.el.classList.toggle('link-active',links.some(l=>l.source===enemy));
-    setText($('battleHint'),'💡 '+(boss&&bossWindingUp(boss)?'特殊行動の予告中！ボスの防壁を割ると中断＋3秒弱体。':uniqueLinks.length?uniqueLinks[0].info.hint:boss?bossProfiles.find(p=>p.id===boss.bossProfile).hint:isJammed()?'防壁回復が停止中。ジャマーを先に倒し、HPと軽減で耐えよう。':'厄介な支援役を固定照準。敵とボスの対策は「図鑑」から。'));
-    const choices=$('targetChoices');
-    for(const button of [...choices.children])if(!state.enemies.some(e=>String(e.id)===button.dataset.targetId))button.remove();
-    for(const enemy of state.enemies) {
-      let button=choices.querySelector(`[data-target-id="${enemy.id}"]`);
-      if(!button){button=document.createElement('button');button.className='ghost-btn';button.dataset.targetId=enemy.id;choices.append(button);}
-      setText(button,`${enemy.emoji} ${enemy.id}${isUrgent(enemy)?' ⚠ 危険':''}`);button.setAttribute('aria-label',`${enemy.name} ${enemy.id}に照準を固定`);button.setAttribute('aria-pressed',String(enemy.id===state.targetId));enemy.el.classList.toggle('target-locked',enemy.id===state.targetId);
+    const selectedLink=links.find(l=>l.source===locked);
+    const affected=selectedLink?state.enemies.filter(e=>{const effect=enemyLinkEffects(e,[selectedLink]);return effect.shotSpeed>1||effect.pierce>0||effect.move>1||effect.attack>1||effect.guard>0;}):[];
+    for(const enemy of state.enemies){
+      const source=links.some(l=>l.source===enemy);enemy.el.classList.toggle('link-active',source);enemy.el.classList.toggle('link-receiving',affected.includes(enemy));enemy.el.classList.toggle('target-locked',enemy.id===state.targetId);
+      let marker=enemy.el.querySelector('.enemy-role-marker');if(!marker){marker=document.createElement('span');marker.className='enemy-role-marker';enemy.el.append(marker);}
+      setText(marker,source?'◇ '+enemyRole(enemy):affected.includes(enemy)?'＋ 支援中':enemy.id===state.targetId?enemyRole(enemy):'');marker.classList.toggle('hidden',!marker.textContent);
     }
+    setText($('linkTargetStatus'),selectedLink?enemyRole(selectedLink.source)+' #'+selectedLink.source.id+' → 効果中：'+(affected.map(e=>enemyRole(e)+' #'+e.id).join('、')||'現在の対象なし'):'');
+    const dangerTargets=[...state.enemies].sort((a,b)=>threatScore(b)-threatScore(a));
+    renderTargetButtons($('priorityTargets'),dangerTargets.filter(e=>isUrgent(e)||e.linkRole||e.boss).slice(0,3));
+    setText($('battleHint'),'💡 '+(boss&&bossWindingUp(boss)?'特殊行動の予告中！ボスの防壁を割ると中断＋3秒弱体。':uniqueLinks.length?uniqueLinks[0].info.hint:boss?bossProfiles.find(p=>p.id===boss.bossProfile).hint:isJammed()?'防壁回復が停止中。ジャマーを先に倒し、HPと軽減で耐えよう。':'厄介な支援役を固定照準。敵とボスの対策は「図鑑」から。'));
+    renderTargetButtons($('targetChoices'),settings.targetSort==='danger'?dangerTargets:state.enemies);
     setText($('damageReport'),state.lastDefeat?state.lastDefeat+'\n現在：'+damageSummary():damageSummary());
 
   }
@@ -1783,7 +1908,7 @@
   el.fxBtn.addEventListener('click',()=>{settings.fxIntensity=settings.fxIntensity==='max'?'low':'max';renderAVControls();sound.play('ui');});
   document.addEventListener('pointerdown',()=>sound.unlock(),{capture:true});
   document.addEventListener('keydown',()=>sound.unlock(),{capture:true});
-  document.addEventListener('visibilitychange',()=>{lastFrame=null;sound.onVisibility();});
+  document.addEventListener('visibilitychange',()=>{lastFrame=null;sound.onVisibility();renderRespawn();});
   initializeHelp();
   for(const key of ['rareOnly','newOnly'])el[key].addEventListener('change',()=>{settings[key]=el[key].checked;});
   document.addEventListener('change',event=>{if(event.target.matches('input,select')&&!event.target.matches('#restoreFile'))saveProgress();});
@@ -1792,15 +1917,15 @@
   initializeStorage();
   // Opt-in harness injected by the local regression runner; no global debug API in normal play.
   if(window.__LOOTMOJI_TEST__)Object.assign(window.__LOOTMOJI_TEST__,{
-    state,cardPool,rarityRates,synergyPool,effects,fxLimits,fmt,calculatePackResults,applyPackResults,
+    state,cardPool,rarityRates,synergyPool,synergyRequirements,effects,fxLimits,fmt,calculatePackResults,applyPackResults,
     snapshotStats,checkSynergies,payKingsTax,spawnEnemy,spawnGroup,maxEnemies,startWave,damageEnemy,
     triggerExplosion,triggerChainLightning,createBlackHole,updateAbilities,updateEnemies,attackEnemy,
     resetGame,step,renderUI,openPacks,closeModal,finishPackAnimation,removeEnemy,killEnemy,hurtPlayer,
     characterPool,selectCharacter,upgradeEnemies,enemyModifiers,enemyUpgradeCost,shieldCapacity,attack,
     upgradeQuote,rescaleEnemies,MAX_ENEMY_LEVEL,isJammed,fireEnemyProjectile,helpText,enemyDamage,applyDebuff,updateDebuffs,clearDebuffs,checkWaveDeadline,directStrike,detonateEnemy,castEnemySupport,enemyCatalog,
     activeEnemyLinks,enemyLinkEffects,enemyLinkCatalog,bossProfiles,bossWindingUp,executeBossSkill,libraryEntries,openLibrary,renderLibrary,
-    showPackAnimation,updatePackAnimation,
-    session,saveProgress,captureProgress,validateSave,validProgress,saveEnvelope,restoreProgress,switchSlot,giveDemoPacks,prepareBattle,startBattle,compareCharacters,characterPreview,renderResultInventory,renderArchive,exportImage,isUrgent,targetWaveKills,damageSummary,
+    showPackAnimation,updatePackAnimation,openingSummary,
+    goalInfo,renderGoals,reserveEnemyLevel,resetEconomy,session,saveProgress,captureProgress,validateSave,validProgress,saveEnvelope,restoreProgress,switchSlot,giveDemoPacks,prepareBattle,startBattle,compareCharacters,characterPreview,renderResultInventory,renderArchive,exportImage,isUrgent,targetWaveKills,damageSummary,
     fireBossVolley,sound,settings,juiceParticles,juiceLimit,juiceStats,emitBurst,shockwave,updateJuice,
   });
   requestAnimationFrame(tick);
